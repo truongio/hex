@@ -430,6 +430,11 @@ internal class KeyboardEngine(
         resetTyping(); clearSpaces(); surface?.suggestions(emptyList())
         return DeleteSlide(target, selStart, target.before(2000).orEmpty())
     }
+    fun deleteWord() {
+        val slide = deleteSlide() ?: return
+        slide.select(1)
+        if (slide.words > 0) deleteSelection()
+    }
     /** The delete slide lifted with words selected: they go. */
     fun deleteSelection() {
         if (!target.connected) return

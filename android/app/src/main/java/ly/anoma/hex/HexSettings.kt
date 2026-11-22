@@ -106,6 +106,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val numberRow = remember(revision) { typing.numberRow }
     val hideComma = remember(revision) { typing.hideComma }
     val hideEmoji = remember(revision) { typing.hideEmoji }
+    val swipeDelete = remember(revision) { typing.swipeDelete }
     val holdMs = remember(revision) { typing.holdMs }
     val popups = remember(revision) { typing.popups }
     val haptics = remember(revision) { typing.haptics }
@@ -242,6 +243,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                             Rule(); Toggle(stringResource(R.string.settings_number_row), stringResource(R.string.settings_number_row_detail), numberRow) { typing.numberRow = it }
                             Rule(); Toggle(stringResource(R.string.settings_comma_key), stringResource(R.string.settings_comma_key_detail), !hideComma) { typing.hideComma = !it }
                             Rule(); Toggle(stringResource(R.string.settings_emoji_key), stringResource(R.string.settings_emoji_key_detail), !hideEmoji) { typing.hideEmoji = !it }
+                            Rule(); Toggle(stringResource(R.string.settings_swipe_delete), stringResource(R.string.settings_swipe_delete_detail), swipeDelete) { typing.swipeDelete = it }
                             Rule(); Stepper(stringResource(R.string.settings_hold_delay), stringResource(R.string.settings_hold_delay_detail),
                                 "$holdMs ms", { typing.holdMs = holdMs - 25 }, { typing.holdMs = holdMs + 25 })
                             Rule(); Toggle(stringResource(R.string.settings_popups), stringResource(R.string.settings_popups_detail), popups) { typing.popups = it }

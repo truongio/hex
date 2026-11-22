@@ -69,6 +69,11 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
     private val enterIcon = ImageView(context)
     private val spaceKey: KeyCap
     private var deleteKey: KeyCap? = null
+    private var shiftKey: KeyCap? = null
+    private var swipeX = Float.NaN
+    private var swipeY = 0f
+    private var swipeAt = 0L
+    private var swiped = false
     private val comma: KeyCap
     private val emojiKey: KeyCap
     private val period: KeyCap
@@ -223,7 +228,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         // Another kind of field in the same box (the app changed its type): the keys, not the emoji panel over them.
         if (emojiOpen) host.closeEmoji()
         current = page
-        clearCallout(); endSlide(); grid = null; letters.clear(); caseKeys.clear(); slides.clear(); shiftIcon = null
+        clearCallout(); endSlide(); grid = null; letters.clear(); caseKeys.clear(); slides.clear(); shiftIcon = null; shiftKey = null
         rows.removeAllViews()
         page.pad?.let { showPad(page, it); return }
         layoutBottom(page.kind)
@@ -271,7 +276,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
                         true
                     }
                 }
-                row.add(switch, 0f, side); at = side
+                row.add(switch, 0f, side); at = side; shiftKey = switch
             }
             for ((position, c) in line.withIndex()) {
                 var touch: KeyPoint? = null
@@ -607,6 +612,44 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         type(KeyPoint((e.rawX - onScreen[0]).toDouble(), (e.rawY - onScreen[1]).toDouble()))
         return true
     }
+    private fun swipeCanStart(e: MotionEvent): Boolean {
+        if (!ime.feedback.swipeDelete || current?.pad != null || rows.visibility != VISIBLE) return false
+        if (e.y < rows.top || e.y >= rows.bottom) return false
+        for (key in listOfNotNull(deleteKey, shiftKey)) {
+            key.getLocationOnScreen(onScreen)
+            if (e.rawX >= onScreen[0] && e.rawX < onScreen[0] + key.width && e.rawY >= onScreen[1] && e.rawY < onScreen[1] + key.height) return false
+        }
+        return true
+    }
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                swiped = false
+                swipeX = if (swipeCanStart(e)) e.x else Float.NaN; swipeY = e.y; swipeAt = e.eventTime
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> swipeX = Float.NaN
+            MotionEvent.ACTION_MOVE -> {
+                if (swipeX.isNaN() || feedback.choosing) return false
+                val dx = swipeX - e.x
+                if (e.eventTime - swipeAt > SWIPE_MS) { swipeX = Float.NaN; return false }
+                if (dx > width * SWIPE_SHARE && dx > 2 * kotlin.math.abs(e.y - swipeY)) {
+                    swipeX = Float.NaN; swiped = true
+                    clearCallout(); endSlide()
+                    ime.engine.deleteWord()
+                    if (vibrates(context, ime.feedback.haptics)) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    return true
+                }
+            }
+        }
+        return false
+    }
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (swiped) {
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) swiped = false
+            return true
+        }
+        return super.onTouchEvent(e)
+    }
     private fun keyAt(x: Float, y: Float): KeyCap? {
         for (key in slides.keys + bottomSlides.keys) {
             key.getLocationOnScreen(onScreen)
@@ -710,5 +753,9 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         deleteKey?.isPressed = false
     }
     override fun onDetachedFromWindow() { cancelGestures(); super.onDetachedFromWindow() }
-    private companion object { const val NUMBER_ROW_SHARE = .8f }
+    private companion object {
+        const val NUMBER_ROW_SHARE = .8f
+        const val SWIPE_SHARE = .35f
+        const val SWIPE_MS = 450L
+    }
 }

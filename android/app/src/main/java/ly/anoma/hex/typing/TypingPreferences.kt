@@ -50,6 +50,9 @@ internal class TypingPreferences(context: Context) {
     var hideEmoji: Boolean
         get() = prefs.getBoolean(HIDE_EMOJI, false)
         set(value) { prefs.edit().putBoolean(HIDE_EMOJI, value).apply() }
+    var swipeDelete: Boolean
+        get() = prefs.getBoolean("swipeDelete", true)
+        set(value) { prefs.edit().putBoolean("swipeDelete", value).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
