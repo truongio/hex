@@ -420,10 +420,18 @@ internal class KeyboardEngine(
     private fun showEmails() {
         if (!emailField || symbols || !target.connected) return
         val typed = emailTyped()
-        surface?.suggestions(EmailSuggestions.matching(emails(), typed).map { Suggestion(it, Suggestion.Kind.Word) })
+        val known = (feedback.learnedEmails + emails()).distinctBy { it.lowercase() }
+        surface?.suggestions(EmailSuggestions.matching(known, typed).map { Suggestion(it, Suggestion.Kind.Word) })
+    }
+    private fun learnEmails() {
+        if (!emailField || !target.connected) return
+        val text = target.before(256).orEmpty() + target.after(256).orEmpty()
+        val typed = EmailSuggestions.found(text)
+        if (typed.isNotEmpty()) feedback.learnedEmails = EmailSuggestions.remember(feedback.learnedEmails, typed)
     }
     fun enter() {
         edited()
+        learnEmails()
         // A text replacement that ends the text goes in before the line break or the editor's action.
         word?.takeIf { canEndWord() }?.textReplacement(before())?.let { replace(it.original, it.replacement) }
         resetTyping(); clearSpaces(); surface?.suggestions(emptyList())
@@ -464,7 +472,7 @@ internal class KeyboardEngine(
     fun clearForDictation() { edited(); resetTyping(); clearSpaces(); surface?.suggestions(emptyList()) }
 
     /** The editor or the keyboard went away: forget the word, never carry it to the next field. */
-    fun leave() { edited(); resetTyping(); clearSpaces(); word = null; surface?.suggestions(emptyList()) }
+    fun leave() { learnEmails(); edited(); resetTyping(); clearSpaces(); word = null; surface?.suggestions(emptyList()) }
 
     /** Dictated text with only the separators missing at the cursor; mid-sentence its first word loses
      * the capital Whisper gave it ([SpokenText.continuing], [language] as dictated or "en" translated). */

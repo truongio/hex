@@ -14,4 +14,14 @@ class EmailSuggestionsTest {
         assertEquals(emptyList<String>(), EmailSuggestions.matching(addresses, "fp@example.org"))
         assertEquals(emptyList<String>(), EmailSuggestions.matching(addresses, "someone"))
     }
+
+    @Test fun addressesTypedAreFoundAndRememberedNewestFirst() {
+        assertEquals(listOf("new.one@mail.example.se"), EmailSuggestions.found("to new.one@mail.example.se."))
+        assertEquals(emptyList<String>(), EmailSuggestions.found("not an address @ all"))
+        val saved = EmailSuggestions.remember(listOf("old@example.com"), listOf("New@Example.com"))
+        assertEquals(listOf("New@Example.com", "old@example.com"), saved)
+        assertEquals(listOf("old@example.com", "New@Example.com"), EmailSuggestions.remember(saved, listOf("OLD@example.com")).let {
+            listOf(it[0].lowercase(), it[1]) })
+        assertEquals(EmailSuggestions.KEPT, EmailSuggestions.remember(emptyList(), (1..30).map { "a$it@x.se" }).size)
+    }
 }

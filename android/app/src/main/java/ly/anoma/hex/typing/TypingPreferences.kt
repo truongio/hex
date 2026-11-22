@@ -53,6 +53,9 @@ internal class TypingPreferences(context: Context) {
     var swipeDelete: Boolean
         get() = prefs.getBoolean("swipeDelete", true)
         set(value) { prefs.edit().putBoolean("swipeDelete", value).apply() }
+    var learnedEmails: List<String>
+        get() = prefs.getString("learnedEmails", null)?.split('\n')?.filter(String::isNotEmpty).orEmpty()
+        set(value) { prefs.edit().putString("learnedEmails", value.joinToString("\n")).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
