@@ -109,8 +109,8 @@ internal class PersonalWords(private val model: TypingModel, words: Collection<S
         /** The personal dictionary's words and shortcuts for the model's language (or every language).
          * Android lets only an enabled input method or spell checker read it, with no permission, and
          * answers anyone else with nothing; any failure reads as nothing. Read it off the main thread. */
-        fun read(resolver: ContentResolver, model: TypingModel): PersonalWords {
-            val words = ArrayList<String>()
+        fun read(resolver: ContentResolver, model: TypingModel, bundled: List<String> = emptyList()): PersonalWords {
+            val words = ArrayList<String>(bundled)
             val shortcuts = HashMap<String, String>()
             try {
                 resolver.query(UserDictionary.Words.CONTENT_URI,
@@ -126,7 +126,7 @@ internal class PersonalWords(private val model: TypingModel, words: Collection<S
                     }
                 }
             } catch (_: RuntimeException) {
-                return PersonalWords(model, emptyList(), emptyMap())
+                return PersonalWords(model, bundled, emptyMap())
             }
             return PersonalWords(model, words, shortcuts)
         }

@@ -75,4 +75,10 @@ class BilingualTypingTest {
         assertTrue(english.toString(), english.none { it in swedish })
         assertTrue(english.toString(), english.all { en.model.index(it.lowercase()) >= 0 })
     }
+
+    @Test fun bundledWordsAreKeptAndSpelledTheirWay() {
+        val own = decoder("sv").also { it.personal = PersonalWords(it.model, listOf("debloat", "TikTok"), emptyMap()) }
+        val w = TypingWord(own, true, en)
+        assertEquals("debloat TikTok ", w.typed("debloat tiktok "))
+    }
 }

@@ -9,3 +9,4 @@ keystore.properties
 *.jks
 *.keystore
 *.p12
+app/src/main/assets/typing/personal.txt
