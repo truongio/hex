@@ -56,6 +56,9 @@ internal class TypingPreferences(context: Context) {
     var learnedEmails: List<String>
         get() = prefs.getString("learnedEmails", null)?.split('\n')?.filter(String::isNotEmpty).orEmpty()
         set(value) { prefs.edit().putString("learnedEmails", value.joinToString("\n")).apply() }
+    var symbolHolds: Boolean
+        get() = prefs.getBoolean(SYMBOL_HOLDS, true)
+        set(value) { prefs.edit().putBoolean(SYMBOL_HOLDS, value).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
@@ -82,6 +85,7 @@ internal class TypingPreferences(context: Context) {
         const val NUMBER_ROW = "numberRow"
         const val HIDE_COMMA = "hideComma"
         const val HIDE_EMOJI = "hideEmoji"
+        const val SYMBOL_HOLDS = "symbolHolds"
         private const val HOLD_MS = "holdMs"
         val HOLD_RANGE = 50..1000
         val KEY_HEIGHTS = 70..140

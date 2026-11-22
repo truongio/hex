@@ -142,10 +142,16 @@ internal class LetterFeedback(private val host: ViewGroup) {
 
         /** What a held letter offers: on row 1 its digit first, under the finger (Gboard types the digit
          * when a held q to p lifts), then its accents with the letter itself. */
-        fun holds(c: Char, language: String, digit: Char?): List<String> {
+        fun holds(c: Char, language: String, digit: Char?, symbol: Char? = null): List<String> {
             val accents = options(c, language)
-            return if (digit == null) accents else listOf(digit.toString()) + accents
+            return (listOfNotNull(symbol?.toString(), digit?.toString()) + accents).distinct()
         }
+
+        private val letterSymbols = mapOf('q' to '%', 'w' to '^', 'e' to '~', 'r' to '|', 't' to '[', 'y' to ']',
+            'u' to '<', 'i' to '>', 'o' to '{', 'p' to '}', 'a' to '@', 's' to '#', 'd' to '&', 'f' to '*', 'g' to '-',
+            'h' to '+', 'j' to '=', 'k' to '(', 'l' to ')', 'ö' to 'ø', 'ä' to 'æ', 'z' to '_', 'x' to '$', 'c' to '"',
+            'v' to '\'', 'b' to ':', 'n' to ';', 'm' to '/')
+        fun symbol(c: Char): Char? = letterSymbols[c.lowercaseChar()]
 
         // Gboard's held symbols (Pixel 8 emulator, API 36, black box) on the keys Hex's pages share with
         // its: the option Gboard selects first, then the rest left to right. Digits offer themselves first.

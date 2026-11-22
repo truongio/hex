@@ -291,8 +291,9 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
                 row.add(k, at, width); at += width
                 if (!symbols) { letters[c] = k; caseKeys.add(c to k) }
                 val digit = if (symbols || digits) null else KeyboardLetters.digit(index, position)
-                k.hint(digit?.toString())
-                fun holds() = if (symbols) LetterFeedback.symbolHolds(c) else LetterFeedback.holds(cased(c).single(), language.layoutCode, digit)
+                val symbol = if (symbols || !ime.feedback.symbolHolds) null else LetterFeedback.symbol(c)
+                k.hint((symbol ?: digit)?.toString())
+                fun holds() = if (symbols) LetterFeedback.symbolHolds(c) else LetterFeedback.holds(cased(c).single(), language.layoutCode, digit, symbol)
                 if (holds().isNotEmpty()) {
                     k.setOnLongClickListener { host.openAccents(holds(), it); true }
                     k.longClickLabel = context.getString(R.string.keyboard_more_characters)
