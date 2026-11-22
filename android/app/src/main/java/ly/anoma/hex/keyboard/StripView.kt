@@ -7,6 +7,8 @@ import android.content.res.Configuration
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
+import android.text.TextPaint
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -198,6 +200,33 @@ internal class StripView(context: Context, private val ime: HexKeyboard, private
     /** The typing model's slots in its order. With what was typed among them they show as given: typed
      * in quotes on the left, then the fix (in a chip) or the likeliest word in the middle. Without it,
      * the likeliest word takes the middle, the next the left, as Gboard and iPhone place them. */
+    private fun fit(i: Int) {
+        val word = words[i]
+        val slot = slotViews[i].width
+        val avail = slot - word.paddingLeft - word.paddingRight
+        val params = word.layoutParams as FrameLayout.LayoutParams
+        var size = 16f
+        var lines = 1
+        val text = word.text?.toString().orEmpty()
+        if (avail > 0 && text.isNotEmpty()) {
+            val paint = TextPaint(word.paint)
+            fun width(sp: Float): Float {
+                paint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, resources.displayMetrics)
+                return paint.measureText(text)
+            }
+            while (size > 13f && width(size) > avail) size -= 1f
+            if (width(size) > avail) {
+                lines = 2; size = 14f
+                while (size > 9f && width(size) > 1.9f * avail) size -= 1f
+            }
+        }
+        val width = if (lines == 2) slot else FrameLayout.LayoutParams.WRAP_CONTENT
+        val height = if (lines == 2) FrameLayout.LayoutParams.WRAP_CONTENT else dp(30)
+        if (word.textSize != TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, size, resources.displayMetrics)) word.textSize = size
+        if (word.maxLines != lines) word.maxLines = lines
+        if (params.width != width || params.height != height) { params.width = width; params.height = height; word.layoutParams = params }
+    }
+
     fun suggestions(slots: List<Suggestion>) {
         val shown = arrayOfNulls<Suggestion>(3)
         if (slots.any { it.kind == Suggestion.Kind.Typed }) slots.take(3).forEachIndexed { i, slot -> shown[i] = slot }
@@ -219,6 +248,8 @@ internal class StripView(context: Context, private val ime: HexKeyboard, private
                 else -> context.getString(R.string.keyboard_suggest, s)
             }
             slotViews[i].isEnabled = s.isNotEmpty()
+            fit(i)
+            slotViews[i].post { fit(i) }
         }
         dividers[0].visibility = if (chip == 0 || chip == 1) INVISIBLE else VISIBLE
         dividers[1].visibility = if (chip == 1 || chip == 2) INVISIBLE else VISIBLE
