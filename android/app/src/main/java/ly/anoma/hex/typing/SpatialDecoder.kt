@@ -162,6 +162,8 @@ internal class SpatialDecoder(val model: TypingModel) {
                 if (d > 0 && model.apostrophe != 0) push(model.apostrophe, t, s.edits, s.cost)
                 if (s.edits >= edits) continue
                 for (c in 1..model.alphabet) if (c != model.apostrophe) push(c, t, s.edits + 1, s.cost + EDIT_COST)
+                if (t < end && end - from >= SUBSTITUTE_LENGTH) for (c in 1..model.alphabet) if (c != model.apostrophe && taps[t].cost[c] > MAX_TAP_COST)
+                    push(c, t + 1, s.edits + 1, s.cost + SUBSTITUTE_COST)
                 if (t < end) layer.add(State(s.lo, s.hi, t + 1, s.edits + 1, s.cost + extraTap[t - from]))
                 if (t + 1 >= end || d + 2 > depthLimit) continue
                 val first = taps[t + 1]; val second = taps[t]
@@ -397,6 +399,8 @@ internal class SpatialDecoder(val model: TypingModel) {
 
         private val spatialOrder = compareBy<Found> { it.cost }.thenBy { it.word }
         private const val EDIT_COST = 7.0
+        private const val SUBSTITUTE_COST = 9.0
+        private const val SUBSTITUTE_LENGTH = 7
         private const val MAX_TAP_COST = 9.0
         // An accented letter typed as its base letter's key (é from e).
         private const val ACCENT_COST = 1.0

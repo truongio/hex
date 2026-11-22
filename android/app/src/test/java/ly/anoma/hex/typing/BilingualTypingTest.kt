@@ -101,4 +101,9 @@ class BilingualTypingTest {
         for (c in "arbe") { val p = grid.centres.getValue(c); w.letter(c.toString(), p.x, p.y, grid) }
         assertTrue(w.strip().toString(), w.strip().any { it.text == "arbetsintervjun" })
     }
+
+    @Test fun aLongWordWithAFarLetterSwappedIsStillFixed() {
+        val own = decoder("sv").also { it.personal = PersonalWords(it.model, listOf("flingsalt"), emptyMap()) }
+        assertEquals("jag köpte flingsalt ", TypingWord(own, true, en).typed("jag köpte flingsald "))
+    }
 }
