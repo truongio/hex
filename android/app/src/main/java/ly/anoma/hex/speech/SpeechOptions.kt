@@ -8,7 +8,7 @@ internal enum class Style { Polished, Casual, Notes, Verbatim }
  * [DictationLanguage]; a language can be dictated without a layout of its own. */
 internal enum class Spoken(val code: String, val label: String) {
     English("en", "English"), Spanish("es", "Español"), German("de", "Deutsch"), Norwegian("no", "Norsk"),
-    French("fr", "Français"), Italian("it", "Italiano");
+    French("fr", "Français"), Italian("it", "Italiano"), Swedish("sv", "Svenska");
 
     // Whisper calls Bokmål "no"; the keyboard and its model use BCP 47 "nb".
     val layoutCode get() = if (this == Norwegian) "nb" else code
@@ -25,7 +25,8 @@ internal enum class Spoken(val code: String, val label: String) {
 internal enum class DictationLanguage(val code: String, val label: String, val layout: Spoken?) {
     English("en", "English", Spoken.English), Spanish("es", "Español", Spoken.Spanish),
     German("de", "Deutsch", Spoken.German), Norwegian("no", "Norsk", Spoken.Norwegian),
-    French("fr", "Français", Spoken.French), Italian("it", "Italiano", Spoken.Italian), Dutch("nl", "Nederlands", null);
+    French("fr", "Français", Spoken.French), Italian("it", "Italiano", Spoken.Italian), Swedish("sv", "Svenska", Spoken.Swedish),
+    Dutch("nl", "Nederlands", null);
 
     companion object {
         fun matching(code: String?): DictationLanguage? = when (code) {

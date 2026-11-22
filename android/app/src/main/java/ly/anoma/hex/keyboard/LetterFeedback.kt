@@ -129,6 +129,9 @@ internal class LetterFeedback(private val host: ViewGroup) {
                     'a' -> "aàáâäæãåāª"; 'e' -> "eèéêëęėē"; 'i' -> "iìíîïĩīį"; 'o' -> "oòóôöõøœōº"; 'u' -> "uùúûüũū"
                     'c' -> "cçčć"; 'n' -> "nñ"; 's' -> "sß"; else -> null
                 }
+                "sv" -> when (lower) {
+                    'a' -> "aàáâãāæ"; 'e' -> "eéèêëēėę"; 'o' -> "oôòóœøōõ"; 'u' -> "uüûùúū"; 'ä' -> "äæ"; 'ö' -> "öø"; else -> accents[lower]
+                }
                 "de" -> when (lower) {
                     'a' -> "aàáâæãåā"; 'o' -> "oôòóœøōõ"; 'u' -> "uûùúū"; else -> accents[lower]
                 }

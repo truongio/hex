@@ -90,6 +90,9 @@
     <string name="settings_keyboard_layout">Keyboard layout</string>
     <string name="settings_layout_follows">Follows dictation · %1$s</string>
     <string name="settings_layout_automatic_detail">Follows your dictation language</string>
+    <string name="settings_second_language">Second language</string>
+    <string name="settings_second_language_detail">Autocorrect keeps both languages in one sentence</string>
+    <string name="settings_second_language_none">None</string>
     <string name="settings_autocorrect">Autocorrect</string>
     <string name="settings_autocorrect_detail">Fixes typos when you press space</string>
     <string name="settings_spatial">Spatial autocorrect</string>

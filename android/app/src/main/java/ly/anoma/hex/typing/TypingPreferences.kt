@@ -9,6 +9,16 @@ internal class TypingPreferences(context: Context) {
     var layout: Spoken?
         get() = Spoken.matching(prefs.getString("layout", null))
         set(value) { prefs.edit().putString("layout", value?.layoutCode).apply() }
+    fun secondLanguage(layout: Spoken): Spoken? {
+        val saved = prefs.getString(SECOND_LANGUAGE, null)
+        val choice = when (saved) {
+            null -> if (layout == Spoken.Swedish) Spoken.English else null
+            NONE -> null
+            else -> Spoken.matching(saved)
+        }
+        return choice?.takeIf { it != layout }
+    }
+    fun secondLanguage(value: Spoken?) { prefs.edit().putString(SECOND_LANGUAGE, value?.layoutCode ?: NONE).apply() }
     /** Settings › Keyboard › Auto-capitalisation: shift comes on where the field asks for a capital. On by default. */
     var autoCapitalize: Boolean
         get() = prefs.getBoolean("autoCapitalize", true)
@@ -40,5 +50,9 @@ internal class TypingPreferences(context: Context) {
         val key = pair(language, original, replacement)
         prefs.edit().putInt(key, (prefs.getInt(key, 0) + 1).coerceAtMost(2)).apply()
     }
-    companion object { const val SUGGEST_SWEAR_WORDS = "suggestSwearWords" }
+    companion object {
+        const val SUGGEST_SWEAR_WORDS = "suggestSwearWords"
+        private const val SECOND_LANGUAGE = "secondLanguage"
+        private const val NONE = "none"
+    }
 }

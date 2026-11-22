@@ -14,11 +14,16 @@ internal data class Suggestion(val text: String, val kind: Kind) {
 
 /** The current word, and the one a space just finished while the next is typed. Both the keyboard
  * and replay feed the real tap at each letter. */
-internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
+internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder, val spatial: Boolean,
+                                                    val other: SpatialDecoder? = null) {
     private val model = decoder.model
     var token = ""
         private set
     private var previous = -1
+    private var otherPrevious = -1
+    private val otherTaps = ArrayList<SpatialDecoder.Tap>()
+    private var switchCost = 0.0
+    private var otherSwitchCost = SWITCH
     private var literalOnly = false
     private val taps = ArrayList<SpatialDecoder.Tap>()
     private var decision: SpatialDecoder.Decision? = null
@@ -44,10 +49,14 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
     /** Starts a word after `before`. The word a space just finished stays revisable only when
      * `before` is still the text it left; an empty `before` keeps it for the next call. */
     fun reset(before: String = "") {
-        token = ""; taps.clear(); decision = null; literalOnly = false
+        token = ""; taps.clear(); otherTaps.clear(); decision = null; literalOnly = false
         this.before = before
         previousText = previousWord(before).takeIf { it.isNotEmpty() }
         previous = model.context(previousText.orEmpty())
+        other?.let { otherPrevious = it.model.context(previousText.orEmpty()) }
+        val inOther = otherContext(before)
+        switchCost = if (inOther) SWITCH else 0.0
+        otherSwitchCost = if (inOther) 0.0 else SWITCH
         sentenceStart = startsSentence(before)
         finished = null
         if (before.isEmpty()) return
@@ -70,10 +79,11 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
             else -> {
                 val finished = currentToken(text.dropLast(1)) ?: return emptyList()
                 val previous = finished.lowercase()
-                val index = model.context(previous)
-                val next = if (index >= 0) model.nextWords(index, suggestSwearWords, fill = false) else emptyList()
-                (next + commonWords[model.language].orEmpty()).filter {
-                    it.lowercase() != previous && !model.neverSuggest.blocks(it.lowercase(), suggestSwearWords, index)
+                val m = other?.model?.takeIf { inModel(it, previous) && !knownHere(previous) } ?: model
+                val index = m.context(previous)
+                val next = if (index >= 0) m.nextWords(index, suggestSwearWords, fill = false) else emptyList()
+                (next + commonWords[m.language].orEmpty()).filter {
+                    it.lowercase() != previous && !m.neverSuggest.blocks(it.lowercase(), suggestSwearWords, index)
                 }
             }
         }.orEmpty()
@@ -90,7 +100,7 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
     // A model word as the strip shows it: English "i" and its contractions with their capital, and
     // a name the books nearly always capitalise ("monday" -> "Monday").
     private fun displayed(word: String): String {
-        if (model.language == "en" && (word == "i" || word.startsWith("i'"))) return "I" + word.drop(1)
+        if ((model.language == "en" || otherOnly(word)?.language == "en") && (word == "i" || word.startsWith("i'"))) return "I" + word.drop(1)
         return capitalisedName(word) ?: word
     }
 
@@ -123,7 +133,7 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
         // Your own word, completed once two letters match, before the dictionary's: a word you added is
         // likelier what you mean than a reading's runner-up ("zor" offers "Zorbex" beside the fix "or").
         if (token.length >= 2) decoder.personal?.completions(token)?.firstOrNull()?.let { add(yours(it)) }
-        val short = if (token.length <= 3) model.completionsAfter(lower, previous, suggestSwearWords).map { shown(model.text(it)) } else emptyList()
+        val short = if (token.length <= 3) completions(lower, short = true).map(::shown) else emptyList()
         if (fix == null) short.firstOrNull { s -> pool.none { it.equals(s, ignoreCase = true) } }?.let(::add)
         val readings = autocorrect && spatial && token.length >= 2 && !protected()
         fun reading(text: String) = if (decoder.personal?.owns(text) == true) yours(text) else shown(text)
@@ -131,7 +141,7 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
         for (s in short) add(s)
         // Your own words before the rest of the dictionary's (iOS lists UILexicon terms with them).
         decoder.personal?.completions(token)?.forEach { add(yours(it)) }
-        for (w in model.completions(lower, suggestSwearWords, previous)) add(shown(model.text(w)))
+        for (w in completions(lower, short = false)) add(shown(w))
         if (readings && token.length < 3) for (r in decision().readings) add(reading(r.text))
         if (pool.isEmpty()) return listOf(typed)
         val first = if (fix != null) Suggestion(fix, Suggestion.Kind.Fix) else Suggestion(pool[0], Suggestion.Kind.Word)
@@ -139,21 +149,59 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
         return if (showTyped) listOf(typed) + words else words
     }
 
+    private fun completions(prefix: String, short: Boolean): List<String> {
+        fun of(d: SpatialDecoder, prev: Int, switch: Double): List<Pair<String, Double>> {
+            val m = d.model
+            val ids = if (short) m.completionsAfter(prefix, prev, suggestSwearWords) else m.completions(prefix, suggestSwearWords, prev)
+            return ids.map { m.text(it) to m.frequencyCost(it) + switch * 8 }
+        }
+        val here = of(decoder, previous, switchCost)
+        val second = other ?: return here.map { it.first }
+        return (here + of(second, otherPrevious, otherSwitchCost)).sortedBy { it.second }.map { it.first }.distinct()
+    }
+
     // A candidate cased as the word was typed, with the capital the strip shows for names.
     private fun shown(word: String) = matchCase(token, if (token.firstOrNull()?.isUpperCase() == true) word else displayed(word))
     fun letter(text: String, x: Double, y: Double, grid: KeyGrid) {
         token += text; decision = null
-        if (spatial && !literalOnly && taps.size < MAX_LENGTH) taps.add(decoder.score(grid, x, y))
+        if (spatial && !literalOnly && taps.size < MAX_LENGTH) {
+            taps.add(decoder.score(grid, x, y))
+            other?.let { otherTaps.add(it.score(grid, x, y)) }
+        }
     }
     fun explicit(text: String) {
-        token += text; taps.clear(); decision = null; literalOnly = true
+        token += text; taps.clear(); otherTaps.clear(); decision = null; literalOnly = true
     }
     fun pop() {
         if (token.isEmpty()) return
         if (taps.size == token.length) taps.removeAt(taps.lastIndex)
+        if (otherTaps.size == token.length) otherTaps.removeAt(otherTaps.lastIndex)
         token = token.dropLast(1); decision = null
     }
-    private fun decision() = decision ?: decoder.decide(token.lowercase(), taps, previous, suggestSwearWords).also { decision = it }
+    private fun decision() = decision ?: run {
+        val lower = token.lowercase()
+        val second = other
+        if (second == null) decoder.decide(lower, taps, previous, suggestSwearWords)
+        else SpatialDecoder.decide(lower, listOf(SpatialDecoder.Side(decoder, taps, previous, switchCost),
+            SpatialDecoder.Side(second, otherTaps, otherPrevious, otherSwitchCost)), suggestSwearWords)
+    }.also { decision = it }
+
+    private fun otherContext(before: String): Boolean {
+        val second = other ?: return false
+        var rest = before
+        repeat(CONTEXT_WORDS) {
+            rest = rest.trimEnd { !it.isLetter() && it != '\'' }
+            val word = rest.takeLastWhile { it.isLetter() || it == '\'' }.lowercase()
+            if (word.isEmpty()) return false
+            rest = rest.dropLast(word.length)
+            val here = inModel(model, word); val there = inModel(second.model, word)
+            if (here != there) return there
+        }
+        return false
+    }
+    private fun inModel(m: TypingModel, word: String) = m.index(word) >= 0 || m.validLiteral(word)
+    private fun knownHere(word: String) = word.lowercase().let { inModel(model, it) || (decoder.personal?.index(it) ?: -1) >= 0 }
+    private fun otherOnly(word: String): TypingModel? = other?.model?.takeIf { !knownHere(word) }
     // Your own words are always yours to offer, as iOS offers UILexicon terms.
     private fun blocked(spelling: String) = model.neverSuggest.blocks(spelling.lowercase(), suggestSwearWords, previous) &&
         decoder.personal?.owns(spelling) != true
@@ -168,18 +216,33 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
         if (near.isEmpty()) return hit
         val token = currentToken(before)
         if (token == null && before.lastOrNull()?.let { it.isLetterOrDigit() || it == '\'' } == true) return hit
-        val continuations = model.continuations((token ?: "").lowercase()) ?: return hit
-        val keyed = keys.mapTo(HashSet()) { model.code(it.lowercaseChar()) }
-        val mass = DoubleArray(continuations.size)
-        for (code in 1 until continuations.size) if (continuations[code] > 0)
-            mass[if (code in keyed) code else model.bases[code]] += continuations[code]
-        val total = mass.sum()
+        val prefix = (token ?: "").lowercase()
         // Right after an elided article or pronoun ("l", "qu"), the apostrophe key is the likeliest: the
         // books split the commonest elisions off ("l'", "d'"), so the word list can't say so itself.
         val elided = token != null && token.lowercase() in ELISIONS[model.language].orEmpty() &&
             before.dropLast(token.length).lastOrNull().let { boundary(it) }
-        if (elided && model.apostrophe != 0) mass[model.apostrophe] = maxOf(mass[model.apostrophe], total)
-        fun odds(c: Char) = model.code(c.lowercaseChar()).takeIf { it != 0 }?.let { kotlin.math.ln(mass[it] + total * 1e-4) }
+        class Share(val m: TypingModel, val mass: DoubleArray, val total: Double, val weight: Double)
+        fun share(m: TypingModel, weight: Double, elision: Boolean): Share? {
+            val continuations = m.continuations(prefix) ?: return null
+            val keyed = keys.mapTo(HashSet()) { m.code(it.lowercaseChar()) }
+            val mass = DoubleArray(continuations.size)
+            for (code in 1 until continuations.size) if (continuations[code] > 0)
+                mass[if (code in keyed) code else m.bases[code]] += continuations[code]
+            val total = mass.sum()
+            if (elision && m.apostrophe != 0) mass[m.apostrophe] = maxOf(mass[m.apostrophe], total)
+            return Share(m, mass, total, weight)
+        }
+        val shares = listOfNotNull(share(model, kotlin.math.exp(-switchCost), elided),
+            other?.let { share(it.model, kotlin.math.exp(-otherSwitchCost), false) })
+        if (shares.isEmpty()) return hit
+        fun odds(c: Char): Double? {
+            var p = 0.0; var any = false
+            for (s in shares) {
+                val code = s.m.code(c.lowercaseChar()); if (code == 0) continue
+                any = true; p += s.weight * s.mass[code] / s.total
+            }
+            return if (any) kotlin.math.ln(p + 1e-4) else null
+        }
         var best = hit
         var bestScore = odds(hit) ?: return hit
         for ((c, distance) in near) {
@@ -234,9 +297,11 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
         if (model.language == "en" && lower in shorthand) return null
         // A word the same letters spell with an apostrophe or an accent, or one that sounds alike,
         // chosen by the word before when it says so clearly ("yes id" -> "yes I'd", "the id" stays).
-        if (!allCaps && '\'' !in token) ContextWords.choice(model, token, previousText, null, sentenceStart)
+        val second = otherOnly(lower)
+        if (!allCaps && '\'' !in token) (ContextWords.choice(model, token, previousText, null, sentenceStart)
+            ?: second?.let { ContextWords.choice(it, token, previousText, null, sentenceStart) })
             ?.takeUnless(::blocked)?.let { return it }
-        if (model.language == "en") {
+        if (model.language == "en" || second?.language == "en") {
             englishFixes[lower]?.takeUnless(::blocked)?.let { return if (allCaps) {
                 if (token.length >= 3) it.uppercase() else null
             } else cased(it) }
@@ -244,7 +309,8 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
         if (allCaps || !spatial) return null
         // A name, day or place typed in lowercase takes its capital ("mary" -> "Mary"), and so does a
         // German noun ("haus" -> "Haus"), as the capitals list beside the model says.
-        val fix = decision().replace?.let { if (decoder.personal?.owns(it) == true) yours(it) else cased(it) } ?: return capitalised(token)
+        val fix = decision().replace?.let { if (decoder.personal?.owns(it) == true) yours(it) else cased(it) }
+            ?: return capitalised(token) ?: second?.let { capitalised(token, it) }
         // A missed space after English "i" ("iwant") gives "I want", as "i" alone does.
         if (model.language == "en" && ' ' in fix) return fix.split(' ').joinToString(" ") { if (it == "i") "I" else it }
         // German's model is lowercase: a noun it corrects to takes its capital ("hsus" -> "Haus").
@@ -259,10 +325,10 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
 
     // `word` with its capital when it is all lowercase and the books nearly always write it with one
     // (95%), or, in German, half the time after an article or determiner ("das leben"); else null.
-    private fun capitalised(word: String): String? {
+    private fun capitalised(word: String, m: TypingModel = model): String? {
         if (word.length < 2 || word != word.lowercase()) return null
-        val share = model.capitals?.percent(word) ?: return null
-        if (share < 95 && !(model.language == "de" && share >= 50 && previousText in germanDeterminers)) return null
+        val share = m.capitals?.percent(word) ?: return null
+        if (share < 95 && !(m.language == "de" && share >= 50 && previousText in germanDeterminers)) return null
         val first = word.first().uppercase()
         return if (first.length == 1) first + word.drop(1) else null
     }
@@ -299,18 +365,21 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
     // The word before, revised now that `next` follows it, or null: words the context decides
     // (`ContextWords`); a word typed with its own apostrophe never gets here.
     private fun revision(text: String, next: String): String? {
-        if (!ContextWords.decides(model.language) || text.isEmpty() || (model.language == "en" && text.length < 2)) return null
+        val m = if (ContextWords.decides(model.language)) model
+            else otherOnly(text.lowercase())?.takeIf { ContextWords.decides(it.language) } ?: return null
+        if (text.isEmpty() || (m.language == "en" && text.length < 2)) return null
         // Typed in capitals, left alone; one capital letter is a sentence's start ("E andato" -> "È andato").
         if (text.length >= 2 && text == text.uppercase() && text != text.lowercase() && !text.startsWith("I'")) return null
         val rest = before.dropLast(text.length + 1)
         val prev = previousWord(rest).takeIf { it.isNotEmpty() }
-        val choice = ContextWords.choice(model, text, prev, next.substringBefore(' ').lowercase(), startsSentence(rest)) ?: return null
-        if (model.neverSuggest.blocks(choice.lowercase(), suggestSwearWords, model.context(prev.orEmpty()))) return null
+        val choice = ContextWords.choice(m, text, prev, next.substringBefore(' ').lowercase(), startsSentence(rest)) ?: return null
+        if (m.neverSuggest.blocks(choice.lowercase(), suggestSwearWords, m.context(prev.orEmpty()))) return null
         return if (addsCapitals || text.first().isUpperCase()) choice else choice.lowercase().takeIf { it != text }
     }
 
     private fun knows(spelling: String) = spelling.lowercase().let {
-        model.index(it) >= 0 || model.known(it) || it in shorthand || (decoder.personal?.index(it) ?: -1) >= 0
+        model.index(it) >= 0 || model.known(it) || it in shorthand || (decoder.personal?.index(it) ?: -1) >= 0 ||
+            other?.model?.let { m -> m.index(it) >= 0 || m.known(it) } == true
     }
 
     // Keeps the word this space finished for the next word's revision or join. After a split or a
@@ -341,6 +410,8 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
          * (ln of how many times likelier) it needs for each dp it claims (iOS letterReach, letterOddsPerPoint). */
         const val REACH = 5.0
         const val ODDS_PER_DP = .8
+        const val SWITCH = 2.5
+        private const val CONTEXT_WORDS = 3
         // Words the strip offers in place of these, but space never puts in: each is a word too.
         private val suggestOnly = mapOf("ill" to "I'll", "id" to "I'd", "were" to "we're", "wed" to "we'd",
             "well" to "we'll", "its" to "it's", "lets" to "let's", "hell" to "he'll", "shell" to "she'll")
@@ -348,14 +419,14 @@ internal class TypingWord(val decoder: SpatialDecoder, val spatial: Boolean) {
         // the commonest words for next-word slots the model can't fill.
         private val sentenceStarters = mapOf("en" to listOf("I", "the", "I'm"), "es" to listOf("yo", "el", "la"),
             "de" to listOf("ich", "das", "die"), "nb" to listOf("jeg", "det", "vi"), "fr" to listOf("je", "le", "la"),
-            "it" to listOf("io", "il", "la"))
+            "it" to listOf("io", "il", "la"), "sv" to listOf("jag", "det", "vi"))
         private val clauseStarters = mapOf("en" to listOf("I", "but", "and"), "es" to listOf("que", "pero", "y"),
             "de" to listOf("und", "aber", "ich"), "nb" to listOf("og", "men", "jeg"), "fr" to listOf("et", "mais", "je"),
-            "it" to listOf("e", "ma", "che"))
+            "it" to listOf("e", "ma", "che"), "sv" to listOf("och", "men", "jag"))
         private val commonWords = mapOf("en" to listOf("the", "to", "and", "a", "I", "of"),
             "es" to listOf("de", "que", "y", "la", "el", "en"), "de" to listOf("und", "die", "der", "ich", "ist", "das"),
             "nb" to listOf("og", "i", "det", "er", "på", "som"), "fr" to listOf("de", "la", "et", "le", "je", "à"),
-            "it" to listOf("di", "e", "che", "la", "il", "a"))
+            "it" to listOf("di", "e", "che", "la", "il", "a"), "sv" to listOf("och", "i", "att", "det", "som", "en"))
         private val midSentenceMarks = ",;:)\"'\u201D\u2019\u2014"
         /** The word right before the cursor, or null inside a handle, path, address or number. */
         fun currentToken(before: CharSequence): String? {

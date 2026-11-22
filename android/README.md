@@ -10,7 +10,7 @@ Welcome explains that the internet is used only to fetch the 190 MB speech model
 
 ## Keyboard and styles
 
-**Automatic** uses the first supported Android system language, or English if none is supported. Hold the language-labelled space bar to switch immediately between Automatic, English, Español, Deutsch and Norsk (Bokmål). Slide on the Hex key or tap **Hex menu** to change the spoken language or style:
+**Automatic** uses the first supported Android system language, or English if none is supported. Hold the language-labelled space bar to switch immediately between Automatic, English, Español, Deutsch, Norsk (Bokmål), Français, Italiano and Svenska. Slide on the Hex key or tap **Hex menu** to change the spoken language or style:
 
 - **Polished** (default): trims standalone hesitation sounds, fixes spacing/capitals and closes sentences.
 - **Casual:** lowercase texting, without the period at the end of a single statement.
@@ -26,6 +26,10 @@ Welcome explains that the internet is used only to fetch the 190 MB speech model
 All four layouts have a bundled, memory-mapped **HXTM v3** word and word-pair model. English and Spanish keep the original iOS Google Books files. German uses Google Books; Bokmål uses the National Library of Norway’s book counts filtered by Norsk ordbank. Start typing to see ranked suggestions; tap one to insert it. A space brings up next-word predictions. Passwords, addresses and editors that disable suggestions use literal typing.
 
 **Keyboard › Keyboard layout** follows dictation by default; an explicit layout can differ from the space bar’s spoken language. Spanish has a dedicated ñ and ¿/¡ on the second symbols page. German is QWERTZ with ü, ö and ä; hold s for ß. Bokmål has å, ø and æ.
+
+**Svenska** has its own layout (å on the top row, ö and ä beside l) and word model, built by [build-swedish-model.py](benchmark/typing/build-swedish-model.py) from Leipzig news and Wikipedia text and OpenSubtitles, filtered by the LibreOffice Swedish dictionary. Unlisted compounds of two model words ("kaffekoppsfabriken") count as words.
+
+**Keyboard › Second language** reads every word in two languages at once, for sentences that mix them ("ska vi ta ett meeting imorgon"). A word either language knows is never corrected into the other; a typo is read in both, and the language of the last word only one of them knows decides which reading wins ("jag har ett meetign" → "meeting", "can you semd the file" → "send"). Completions and next-word predictions come from both. With the Swedish layout it is English until you choose otherwise; other layouts start with none.
 
 **Keyboard › Suggest swear words** is off by default on every layout. Slurs on the
 [curated list](app/src/main/assets/typing/never-suggest.tsv) are never offered, even when

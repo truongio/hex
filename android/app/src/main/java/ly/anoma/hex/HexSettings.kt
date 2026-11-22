@@ -41,11 +41,12 @@ import ly.anoma.hex.typing.TypingPreferences
 
 private enum class Page(val title: Int) {
     Home(R.string.app_name), Dictation(R.string.settings_dictation), Keyboard(R.string.settings_keyboard), Privacy(R.string.settings_privacy),
-    Language(R.string.settings_dictation_language), Layout(R.string.settings_keyboard_layout), Styles(R.string.settings_style),
+    Language(R.string.settings_dictation_language), Layout(R.string.settings_keyboard_layout),
+    SecondLanguage(R.string.settings_second_language), Styles(R.string.settings_style),
     Policy(R.string.settings_privacy_policy), Licences(R.string.settings_licences), Licence(R.string.settings_licences);
     val parent get() = when (this) {
         Language, Styles -> Dictation
-        Layout -> Keyboard
+        Layout, SecondLanguage -> Keyboard
         Policy, Licences -> Privacy
         Licence -> Licences
         else -> Home
@@ -85,6 +86,8 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val automatic = remember(revision, LocalConfiguration.current) { speech.spoken }
     val selectedLanguage = remember(revision) { speech.language }
     val selectedLayout = remember(revision) { typing.layout }
+    val currentLayout = selectedLayout ?: automatic.layout ?: Spoken.English
+    val secondLanguage = remember(revision, currentLayout) { typing.secondLanguage(currentLayout) }
     val style = remember(revision) { speech.style }
     val translate = remember(revision) { speech.translation }
     val clean = remember(revision) { speech.clean }
@@ -215,6 +218,8 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                             Entry(stringResource(R.string.settings_keyboard_layout),
                                 if (selectedLayout == null) stringResource(R.string.settings_layout_follows, automatic.label) else null,
                                 selectedLayout?.label ?: stringResource(R.string.settings_automatic), { open(Page.Layout) })
+                            Rule(); Entry(stringResource(R.string.settings_second_language), stringResource(R.string.settings_second_language_detail),
+                                secondLanguage?.label ?: stringResource(R.string.settings_second_language_none), { open(Page.SecondLanguage) })
                             Rule(); Toggle(stringResource(R.string.settings_auto_capitalisation), stringResource(R.string.settings_auto_capitalisation_detail),
                                 autoCapitalize) { typing.autoCapitalize = it }
                             Rule(); Toggle(stringResource(R.string.settings_autocorrect), stringResource(R.string.settings_autocorrect_detail), autocorrect) { typing.autocorrect = it }
@@ -266,6 +271,13 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                             Entry(label ?: stringResource(R.string.settings_automatic),
                                 if (label != null) null else stringResource(if (layout) R.string.settings_layout_automatic_detail else R.string.dictation_language_automatic_detail),
                                 if (chosen) "✓" else "", { pick(); open(page.parent) })
+                        }
+                    }
+                    Page.SecondLanguage -> Card {
+                        (listOf(null) + Spoken.entries.filter { it != currentLayout }).forEachIndexed { i, it ->
+                            if (i != 0) Rule()
+                            Entry(it?.label ?: stringResource(R.string.settings_second_language_none), null,
+                                if (it == secondLanguage) "✓" else "", { typing.secondLanguage(it); open(page.parent) })
                         }
                     }
                     Page.Policy, Page.Licences, Page.Licence -> {

@@ -181,8 +181,10 @@ internal class KeyboardEngine(
     private fun cancelChip() { pendingChip?.let(main::removeCallbacks); pendingChip = null }
     fun configureTyping(keepWord: Boolean = false) {
         val language = layoutLanguage().layoutCode
+        val second = feedback.secondLanguage(layoutLanguage())?.layoutCode
         val active = word
-        if (ordinaryField && keepWord && active != null && active.decoder.model.language == language && active.spatial == feedback.spatial &&
+        if (ordinaryField && keepWord && active != null && active.decoder.model.language == language &&
+            active.other?.model?.language == second && active.spatial == feedback.spatial &&
             active.token.isNotEmpty() && endsWith(prefix + active.token)) {
             active.addsCapitals = feedback.autoCapitalize
             showPlane(); showSuggestions(active); return
@@ -190,7 +192,8 @@ internal class KeyboardEngine(
         resetTyping()
         word = if (ordinaryField) {
             try {
-                TypingWord(models.getOrPut(language) { loadDecoder(language).also(::loadPersonal) }, feedback.spatial)
+                fun decoder(code: String) = models.getOrPut(code) { loadDecoder(code).also(::loadPersonal) }
+                TypingWord(decoder(language), feedback.spatial, second?.let(::decoder))
                     .also { it.suggestSwearWords = feedback.suggestSwearWords; it.addsCapitals = feedback.autoCapitalize }
             } catch (_: java.io.IOException) { null } // The editor can still type if its assets cannot be read.
         } else null

@@ -180,14 +180,15 @@ internal class SpatialDecoder(val model: TypingModel) {
         return found.map { Found(it.key, it.value) }
     }
 
-    fun decide(typed: String, taps: List<Tap>, previous: Int, swears: Boolean): Decision {
-        val none = Decision(null, emptyList())
+    class Scored(val literal: Double, val known: Boolean, val listed: Boolean, val readings: List<Reading>)
+
+    fun scored(typed: String, taps: List<Tap>, previous: Int, swears: Boolean): Scored? {
         if (typed.length !in 2..32 || taps.size != typed.length || model.neverSuggest.blocks(typed, swears, previous) ||
-            typed.any { model.code(it) == 0 || it == '\'' }) return none
+            typed.any { model.code(it) == 0 || it == '\'' }) return null
         val literal = model.index(typed)
         val personal = personal?.takeIf { it.size > 0 }
         val yours = personal?.index(typed) ?: -1
-        val knownLiteral = literal >= 0 || model.known(typed) || yours >= 0
+        val knownLiteral = literal >= 0 || model.known(typed) || yours >= 0 || compound(typed)
         // A rare word the books use, outside the model: what it costs by its count, not a known word's.
         val listed = if (literal < 0 && yours < 0) model.validCost(typed) else null
         var lm = when {
@@ -200,7 +201,7 @@ internal class SpatialDecoder(val model: TypingModel) {
         if (yours >= 0) lm = minOf(lm, USER_WORD_COST)
         var cost = lmWeight * lm
         for (i in taps.indices) cost += taps[i].cost[model.code(typed[i])]
-        if (!cost.isFinite()) return none
+        if (!cost.isFinite()) return null
         val readings = ArrayList<Reading>()
         // iOS applies the language score only to the five best spatial readings.
         for ((w, spatial) in search(taps, 0, taps.size, 1, swears, previous).sortedWith(spatialOrder).take(5)) if (w != literal)
@@ -241,37 +242,26 @@ internal class SpatialDecoder(val model: TypingModel) {
                 }
             }
         }
-        readings.sortWith(compareBy<Reading> { it.cost }.thenBy { it.text })
-        val best = readings.firstOrNull()
-        // A listed rare word takes a one-word fix as a spelling nobody knows does, but is split into
-        // words only as a known word is.
-        val margin = if (best == null || !knownLiteral || foldAccents(best.text.lowercase()) == foldAccents(typed) ||
-            (listed != null && ' ' !in best.text)) 2.0 else 7.0
-        var replace = if (best != null && cost - best.cost >= margin) best.text else null
-        var shown = readings.asSequence().filter { it.cost < cost && !it.text.equals(typed, ignoreCase = true) }
-            .distinctBy { it.text.lowercase() }.toMutableList()
-        // Nothing above read a spelling that is no word at all: a missed space may still explain it,
-        // with a slip in the second word or three or more words run together (iOS #2244). Never a
-        // known spelling or a likelier reading that only missed the margin; not German, whose model
-        // is lowercase and whose nouns take their capital in the one-word path.
-        if (replace == null && !knownLiteral && model.language != "de" && typed.length >= 5) {
-            missedSpaceReading(taps, typed, previous, swears, cost)?.let { fallback ->
-                val likeliest = shown.firstOrNull()
-                if (likeliest == null || fallback.cost <= likeliest.cost || likeliest.text.equals(fallback.text, ignoreCase = true)) {
-                    replace = fallback.text
-                    shown.removeAll { it.text.equals(fallback.text, ignoreCase = true) }
-                    shown.add(0, fallback)
-                }
-            }
+        return Scored(cost, knownLiteral, listed != null, readings)
+    }
+
+    fun decide(typed: String, taps: List<Tap>, previous: Int, swears: Boolean): Decision =
+        decide(typed, listOf(Side(this, taps, previous, 0.0)), swears)
+
+    private fun compound(typed: String): Boolean {
+        if (model.language != "sv" || typed.length < 7) return false
+        for (k in 3..typed.length - 3) {
+            if (model.index(typed.substring(k)) < 0) continue
+            val head = typed.substring(0, k)
+            if (model.index(head) >= 0 || (head.length > 3 && head.endsWith('s') && model.index(head.dropLast(1)) >= 0)) return true
         }
-        if (best == null && replace == null) return none
-        return Decision(replace, shown.take(3))
+        return false
     }
 
     // What a missed space can still make of taps nothing else read (iOS missedSpaceReading): the
     // cheaper of a word and a slipped second word, or three to six words spelled as typed, taken only
     // when its words, without the spaces' cost, cost no more than the run nobody knows does.
-    private fun missedSpaceReading(taps: List<Tap>, typed: String, previous: Int, swears: Boolean, literalCost: Double): Reading? {
+    fun missedSpaceReading(taps: List<Tap>, typed: String, previous: Int, swears: Boolean, literalCost: Double): Reading? {
         val space = taps[0].missedSpaceCost
         fun affordable(r: Reading?) = r?.takeIf { it.cost - space * (it.text.count { c -> c == ' ' }) <= literalCost }
         val slipped = affordable(slippedSecondWord(taps, typed, previous, swears))
@@ -359,16 +349,60 @@ internal class SpatialDecoder(val model: TypingModel) {
     }
 
     private fun key(last: Int, count: Int) = (last.toLong() shl 8) or count.toLong()
-    private companion object {
-        val spatialOrder = compareBy<Found> { it.cost }.thenBy { it.word }
-        const val EDIT_COST = 7.0
-        const val MAX_TAP_COST = 9.0
+    class Side(val decoder: SpatialDecoder, val taps: List<Tap>, val previous: Int, val switch: Double)
+
+    companion object {
+        fun decide(typed: String, sides: List<Side>, swears: Boolean): Decision {
+            val none = Decision(null, emptyList())
+            val scored = sides.mapNotNull { side -> side.decoder.scored(typed, side.taps, side.previous, swears)?.let { side to it } }
+            if (scored.isEmpty()) return none
+            if (sides.any { it.decoder.model.neverSuggest.blocks(typed, swears, it.previous) }) return none
+            val cost = scored.minOf { (side, s) -> s.literal + side.switch }
+            val knownLiteral = scored.any { it.second.known }
+            val listedOnly = scored.any { it.second.listed } && scored.none { (side, s) -> s.known && !s.listed &&
+                side.decoder.model.index(typed) >= 0 }
+            val readings = ArrayList<Reading>()
+            for ((side, s) in scored) for (r in s.readings) readings.add(Reading(r.text, r.cost + side.switch, r.frequency))
+            readings.sortWith(compareBy<Reading> { it.cost }.thenBy { it.text })
+            val best = readings.firstOrNull()
+            // A listed rare word takes a one-word fix as a spelling nobody knows does, but is split into
+            // words only as a known word is.
+            val margin = if (best == null || !knownLiteral || foldAccents(best.text.lowercase()) == foldAccents(typed) ||
+                (listedOnly && ' ' !in best.text)) 2.0 else 7.0
+            var replace = if (best != null && cost - best.cost >= margin) best.text else null
+            val shown = readings.asSequence().filter { it.cost < cost && !it.text.equals(typed, ignoreCase = true) }
+                .distinctBy { it.text.lowercase() }.toMutableList()
+            // Nothing above read a spelling that is no word at all: a missed space may still explain it,
+            // with a slip in the second word or three or more words run together (iOS #2244). Never a
+            // known spelling or a likelier reading that only missed the margin; not German, whose model
+            // is lowercase and whose nouns take their capital in the one-word path.
+            if (replace == null && !knownLiteral && typed.length >= 5) {
+                val fallback = scored.filter { it.first.decoder.model.language != "de" }.mapNotNull { (side, s) ->
+                    side.decoder.missedSpaceReading(side.taps, typed, side.previous, swears, s.literal)
+                        ?.let { Reading(it.text, it.cost + side.switch, it.frequency) }
+                }.minByOrNull { it.cost }
+                if (fallback != null) {
+                    val likeliest = shown.firstOrNull()
+                    if (likeliest == null || fallback.cost <= likeliest.cost || likeliest.text.equals(fallback.text, ignoreCase = true)) {
+                        replace = fallback.text
+                        shown.removeAll { it.text.equals(fallback.text, ignoreCase = true) }
+                        shown.add(0, fallback)
+                    }
+                }
+            }
+            if (best == null && replace == null) return none
+            return Decision(replace, shown.take(3))
+        }
+        private fun foldAccents(s: String) = Normalizer.normalize(s, Normalizer.Form.NFD).filter { it !in '\u0300'..'\u0308' || it == '\u0303' }
+
+        private val spatialOrder = compareBy<Found> { it.cost }.thenBy { it.word }
+        private const val EDIT_COST = 7.0
+        private const val MAX_TAP_COST = 9.0
         // An accented letter typed as its base letter's key (é from e).
-        const val ACCENT_COST = 1.0
-        const val SPACE_TAP_WEIGHT = .25
+        private const val ACCENT_COST = 1.0
+        private const val SPACE_TAP_WEIGHT = .25
         // A space tap reads as a letter only within about the bar's top fifth.
-        const val MERGE_REACH = 3.0
-        const val USER_WORD_COST = 11.0
+        private const val MERGE_REACH = 3.0
+        private const val USER_WORD_COST = 11.0
     }
-    private fun foldAccents(s: String) = Normalizer.normalize(s, Normalizer.Form.NFD).filter { it !in '\u0300'..'\u0308' || it == '\u0303' }
 }
