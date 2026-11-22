@@ -56,7 +56,7 @@ class HexKeyboard : InputMethodService() {
     }
     private val typingChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == TypingPreferences.SUGGEST_SWEAR_WORDS) engine.swearWordsChanged()
-        if (key == TypingPreferences.KEY_HEIGHT || key == TypingPreferences.SIDE_MARGIN) resized = true
+        if (key == TypingPreferences.KEY_HEIGHT || key == TypingPreferences.SIDE_MARGIN || key == TypingPreferences.NUMBER_ROW) resized = true
     }
     private var resized = false
     internal val previewAllowed get() = !engine.secure

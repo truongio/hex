@@ -115,8 +115,6 @@ internal object KeyboardMetrics {
     const val DELETE_CANCEL = 32f
     const val DELETE_REPEAT_DELAY = 400L
     const val DELETE_REPEAT_EVERY = 50L
-    /** A key held this long shows what it holds (Gboard's long press: between 300 and 350 ms). */
-    const val HOLD_MS = 300L
     /** Gboard's pads: 53.3 dp keys on the letters' 58.9 dp rows (a 5.7 dp gap between rows). */
     const val PAD_ROW_GAP = 5.7f
     /** Gboard ticks again as a key lifts when it was held at least this long. */

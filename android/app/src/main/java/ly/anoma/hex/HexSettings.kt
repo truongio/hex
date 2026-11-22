@@ -103,6 +103,8 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val spatial = remember(revision) { typing.spatial }
     val keyHeight = remember(revision) { typing.keyHeight }
     val sideMargin = remember(revision) { typing.sideMargin }
+    val numberRow = remember(revision) { typing.numberRow }
+    val holdMs = remember(revision) { typing.holdMs }
     val popups = remember(revision) { typing.popups }
     val haptics = remember(revision) { typing.haptics }
     var copied by remember(transcript) { mutableStateOf(false) }
@@ -235,6 +237,9 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                                 "$keyHeight%", { typing.keyHeight = keyHeight - 5 }, { typing.keyHeight = keyHeight + 5 })
                             Rule(); Stepper(stringResource(R.string.settings_side_margin), stringResource(R.string.settings_side_margin_detail),
                                 "$sideMargin dp", { typing.sideMargin = sideMargin - 2 }, { typing.sideMargin = sideMargin + 2 })
+                            Rule(); Toggle(stringResource(R.string.settings_number_row), stringResource(R.string.settings_number_row_detail), numberRow) { typing.numberRow = it }
+                            Rule(); Stepper(stringResource(R.string.settings_hold_delay), stringResource(R.string.settings_hold_delay_detail),
+                                "$holdMs ms", { typing.holdMs = holdMs - 25 }, { typing.holdMs = holdMs + 25 })
                             Rule(); Toggle(stringResource(R.string.settings_popups), stringResource(R.string.settings_popups_detail), popups) { typing.popups = it }
                             Rule(); Toggle(stringResource(R.string.settings_haptics), stringResource(R.string.settings_haptics_detail), haptics) { typing.haptics = it }
                         }

@@ -49,6 +49,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
     private val quiet = context.getColor(R.color.quiet)
     private val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     private val scale = ime.feedback.keyHeight / 100f
+    private val numberRow = ime.feedback.numberRow
     private val rowHeight = px(scale * if (landscape) KeyboardMetrics.ROW_LANDSCAPE else KeyboardMetrics.ROW)
     private val keyHeight = px(scale * if (landscape) KeyboardMetrics.KEY_HEIGHT_LANDSCAPE else KeyboardMetrics.KEY_HEIGHT)
     private val insetTop = (rowHeight - keyHeight) / 2
@@ -233,8 +234,18 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         val lines = page.lines
         val columns = KeyboardMetrics.columns(lines).toFloat()
         val side = KeyboardMetrics.sideWidth(page, lines)
+        val digits = numberRow && !symbols
+        if (digits) {
+            val height = (rowHeight * NUMBER_ROW_SHARE).toInt()
+            val inset = (insetTop * NUMBER_ROW_SHARE).toInt()
+            val row = KeyRowLayout(context, columns, this.side, gap, inset + reach, inset)
+            rows.addView(row, LayoutParams(LayoutParams.MATCH_PARENT, height + reach))
+            val digitWidth = columns / 10f
+            for ((i, d) in "1234567890".withIndex())
+                row.add(caps.cap(d.toString(), d.toString(), modifier, 21f) { ime.engine.type(d.toString()) }, i * digitWidth, digitWidth)
+        }
         for ((index, line) in lines.withIndex()) {
-            val top = if (index == 0) reach else 0
+            val top = if (index == 0 && !digits) reach else 0
             val row = KeyRowLayout(context, columns, this.side, gap, insetTop + top, insetBottom)
             rows.addView(row, LayoutParams(LayoutParams.MATCH_PARENT, rowHeight + top))
             // Rows 1 and 2 centre their letters; row 3's share what shift and delete leave.
@@ -275,7 +286,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
                 }
                 row.add(k, at, width); at += width
                 if (!symbols) { letters[c] = k; caseKeys.add(c to k) }
-                val digit = if (symbols) null else KeyboardLetters.digit(index, position)
+                val digit = if (symbols || digits) null else KeyboardLetters.digit(index, position)
                 k.hint(digit?.toString())
                 fun holds() = if (symbols) LetterFeedback.symbolHolds(c) else LetterFeedback.holds(cased(c).single(), language.layoutCode, digit)
                 if (holds().isNotEmpty()) {
@@ -520,7 +531,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         item?.performClick()
     }
 
-    /** Touches for a key that types as it lifts: pressed, its pop-up, after [KeyboardMetrics.HOLD_MS] its held
+    /** Touches for a key that types as it lifts: pressed, its pop-up, after the long-press delay its held
      * options to slide over, and on lifting (or when another key goes down first) [type] with the option
      * chosen, or null for the key's own. */
     private fun typesOnLift(k: KeyCap, preview: () -> String?, holds: () -> List<List<String>>, default: () -> Int = { 0 },
@@ -545,7 +556,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
                     val options = holds()
                     if (options.firstOrNull().isNullOrEmpty().not()) {
                         pendingAccents = Runnable { if (v.isPressed) feedback.hold(k.face, options, default()) }
-                        postDelayed(pendingAccents!!, KeyboardMetrics.HOLD_MS)
+                        postDelayed(pendingAccents!!, ime.feedback.holdMs.toLong())
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -685,4 +696,5 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         deleteKey?.isPressed = false
     }
     override fun onDetachedFromWindow() { cancelGestures(); super.onDetachedFromWindow() }
+    private companion object { const val NUMBER_ROW_SHARE = .8f }
 }

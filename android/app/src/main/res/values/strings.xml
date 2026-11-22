@@ -94,6 +94,10 @@
     <string name="settings_key_height_detail">Taller or shorter keys</string>
     <string name="settings_side_margin">Side margins</string>
     <string name="settings_side_margin_detail">Keeps keys off curved screen edges</string>
+    <string name="settings_number_row">Number row</string>
+    <string name="settings_number_row_detail">Digits above the letters</string>
+    <string name="settings_hold_delay">Long-press delay</string>
+    <string name="settings_hold_delay_detail">How long to hold a key for its accents and symbols</string>
     <string name="settings_second_language">Second language</string>
     <string name="settings_second_language_detail">Autocorrect keeps both languages in one sentence</string>
     <string name="settings_second_language_none">None</string>

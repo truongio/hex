@@ -38,6 +38,12 @@ internal class TypingPreferences(context: Context) {
     var sideMargin: Int
         get() = prefs.getInt(SIDE_MARGIN, 0).coerceIn(SIDE_MARGINS)
         set(value) { prefs.edit().putInt(SIDE_MARGIN, value.coerceIn(SIDE_MARGINS)).apply() }
+    var numberRow: Boolean
+        get() = prefs.getBoolean(NUMBER_ROW, false)
+        set(value) { prefs.edit().putBoolean(NUMBER_ROW, value).apply() }
+    var holdMs: Int
+        get() = prefs.getInt(HOLD_MS, 150).coerceIn(HOLD_RANGE)
+        set(value) { prefs.edit().putInt(HOLD_MS, value.coerceIn(HOLD_RANGE)).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
@@ -61,6 +67,9 @@ internal class TypingPreferences(context: Context) {
         private const val SECOND_LANGUAGE = "secondLanguage"
         const val KEY_HEIGHT = "keyHeight"
         const val SIDE_MARGIN = "sideMargin"
+        const val NUMBER_ROW = "numberRow"
+        private const val HOLD_MS = "holdMs"
+        val HOLD_RANGE = 50..1000
         val KEY_HEIGHTS = 70..140
         val SIDE_MARGINS = 0..48
         private const val NONE = "none"
