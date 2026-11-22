@@ -10,3 +10,4 @@ keystore.properties
 *.keystore
 *.p12
 app/src/main/assets/typing/personal.txt
+app/src/main/assets/typing/emails.txt

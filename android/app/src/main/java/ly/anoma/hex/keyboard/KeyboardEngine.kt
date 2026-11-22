@@ -40,6 +40,7 @@ internal class KeyboardEngine(
     private val background: Executor = Executor { it.run() },
     private val clock: () -> Long = { SystemClock.uptimeMillis() },
     private val main: Handler = Handler(Looper.getMainLooper()),
+    private val emails: () -> List<String> = { emptyList() },
 ) {
     private companion object {
         /** The fix and the decoder's readings wait for this pause in typing: working them out costs a
@@ -57,6 +58,7 @@ internal class KeyboardEngine(
     private val ordinaryField get() = fieldTyping != FieldTyping.Literal
     private val autocorrecting get() = feedback.autocorrect && fieldTyping == FieldTyping.Full
     private var urlField = false
+    private var emailField = false
     private var prefix = ""
     private var expectedCaret = -1
     private data class Undo(val language: String, val original: String, val replacement: String)
@@ -96,12 +98,14 @@ internal class KeyboardEngine(
         }
         fieldTyping = if (secure) FieldTyping.Literal else FieldTyping.of(attribute.inputType, attribute.imeOptions)
         urlField = FieldKind.of(attribute.inputType) == FieldKind.Url
+        emailField = !secure && FieldKind.of(attribute.inputType) == FieldKind.Email
         resetTyping(); word = null; clearSpaces()
         pad = Pad.of(attribute.inputType)
         symbols = pad != null
         more = false; shift.reset()
         selStart = attribute.initialSelStart; selEnd = attribute.initialSelEnd
         refreshCaps(force = true)
+        showEmails()
     }
 
     fun updateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int) {
@@ -199,6 +203,7 @@ internal class KeyboardEngine(
         } else null
         showPlane()
         showSuggestions(word)
+        showEmails()
     }
 
     // The strip while a word is typed: completions at once, then, after a pause, the model's whole
@@ -292,6 +297,11 @@ internal class KeyboardEngine(
      * key that starts a word. A space right after a picked word is swallowed (it still counts towards
      * double-space), and a closing mark takes its place. */
     fun pickSuggestion(text: String) {
+        if (emailField) {
+            edited()
+            if (replace(emailTyped(), text)) { surface?.suggestions(emptyList()); inputDone() }
+            return
+        }
         val w = word ?: return
         edited()
         if (symbols || !canEndWord()) return
@@ -374,6 +384,7 @@ internal class KeyboardEngine(
             }
         }
         resetTyping(); target.commit(value); showPredictions(if (w != null) before() else null)
+        showEmails()
         inputDone()
     }
     fun delete() {
@@ -403,6 +414,13 @@ internal class KeyboardEngine(
             if (track) { w!!.pop(); if (expectedCaret >= 0) expectedCaret-- } else resetTyping()
         }
         if (w != null && w.token.isNotEmpty()) showSuggestions(w) else surface?.suggestions(emptyList())
+        showEmails()
+    }
+    private fun emailTyped() = before().takeLastWhile { !it.isWhitespace() && it != ',' && it != ';' }
+    private fun showEmails() {
+        if (!emailField || symbols || !target.connected) return
+        val typed = emailTyped()
+        surface?.suggestions(EmailSuggestions.matching(emails(), typed).map { Suggestion(it, Suggestion.Kind.Word) })
     }
     fun enter() {
         edited()

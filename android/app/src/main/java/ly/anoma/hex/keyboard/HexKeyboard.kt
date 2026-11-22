@@ -52,10 +52,15 @@ class HexKeyboard : InputMethodService() {
     }
     internal val engine by lazy {
         KeyboardEngine(InputConnectionTarget(this), feedback, { layoutLanguage }, { SpatialDecoder(TypingModel.asset(assets, it)) },
-            readPersonal = { PersonalWords.read(contentResolver, it, bundledWords) }, background = words)
+            readPersonal = { PersonalWords.read(contentResolver, it, bundledWords) }, background = words,
+            emails = { bundledEmails })
     }
     private val bundledWords by lazy {
         try { assets.open("typing/personal.txt").bufferedReader().use { r -> r.readLines().map(String::trim).filter(String::isNotEmpty) } }
+        catch (_: java.io.IOException) { emptyList() }
+    }
+    private val bundledEmails by lazy {
+        try { assets.open("typing/emails.txt").bufferedReader().use { r -> r.readLines().map(String::trim).filter(String::isNotEmpty) } }
         catch (_: java.io.IOException) { emptyList() }
     }
     private val typingChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
