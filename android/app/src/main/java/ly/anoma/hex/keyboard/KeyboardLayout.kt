@@ -42,7 +42,6 @@ internal enum class FieldTyping {
             if (inputType and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return Literal
             val variation = inputType and InputType.TYPE_MASK_VARIATION
             if (variation in SECRET || variation in ADDRESS) return Literal
-            if (imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0) return Literal
             val search = imeOptions and EditorInfo.IME_MASK_ACTION == EditorInfo.IME_ACTION_SEARCH ||
                 variation == InputType.TYPE_TEXT_VARIATION_FILTER || inputType and InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE != 0
             if (search || variation == InputType.TYPE_TEXT_VARIATION_URI) return Full

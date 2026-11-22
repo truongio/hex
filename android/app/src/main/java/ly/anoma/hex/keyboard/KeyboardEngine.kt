@@ -60,6 +60,7 @@ internal class KeyboardEngine(
     private val autocorrecting get() = feedback.autocorrect && fieldTyping == FieldTyping.Full
     private var urlField = false
     private var emailField = false
+    private var noLearning = false
     private var prefix = ""
     private var expectedCaret = -1
     private data class Undo(val language: String, val original: String, val replacement: String)
@@ -99,6 +100,7 @@ internal class KeyboardEngine(
         }
         fieldTyping = if (secure) FieldTyping.Literal else FieldTyping.of(attribute.inputType, attribute.imeOptions)
         urlField = FieldKind.of(attribute.inputType) == FieldKind.Url
+        noLearning = attribute.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         emailField = !secure && FieldKind.of(attribute.inputType) == FieldKind.Email
         resetTyping(); word = null; clearSpaces()
         pad = Pad.of(attribute.inputType)
@@ -113,7 +115,8 @@ internal class KeyboardEngine(
         selStart = newSelStart; selEnd = newSelEnd
         dictated?.let { if (!undoable(it)) offerUndo(null) }
         if (oldSelStart != newSelStart || oldSelEnd != newSelEnd) {
-            if (expectedCaret >= 0 && (newSelStart != expectedCaret || newSelEnd != expectedCaret)) {
+            val inlineCompletion = urlField && newSelStart == expectedCaret && newSelEnd > newSelStart
+            if (expectedCaret >= 0 && !inlineCompletion && (newSelStart != expectedCaret || newSelEnd != expectedCaret)) {
                 // Editors may coalesce selection notifications. Compare the actual surrounding text
                 // before invalidating our own in-flight commit, not a stale intermediate offset.
                 val suffix = undo?.let { it.replacement + " " } ?: word?.token?.takeIf { it.isNotEmpty() }?.let { prefix + it }
@@ -286,6 +289,7 @@ internal class KeyboardEngine(
     private fun replace(old: String, new: String): Boolean {
         if (secure || !target.connected) return false
         // With a non-empty selection deleteSurroundingText would remove text outside the selection.
+        if (urlField && selStart >= 0 && selEnd > selStart && selStart == expectedCaret) target.commit("")
         if (target.selected()?.isNotEmpty() == true || (old.isNotEmpty() && !endsWith(old))) return false
         target.beginBatch()
         return try {
@@ -397,7 +401,7 @@ internal class KeyboardEngine(
         val last = undo
         undo = null
         if (last != null && endsWith(last.replacement + " ") && replace(last.replacement + " ", last.original)) {
-            feedback.undo(last.language, last.original, last.replacement)
+            if (!noLearning) feedback.undo(last.language, last.original, last.replacement)
             val typed = last.original.substringAfterLast(' ')
             prefix = before().dropLast(typed.length).takeLast(40); word?.restored(typed, prefix)
             if (expectedCaret >= 0) expectedCaret += last.original.length - last.replacement.length - 1
@@ -407,7 +411,7 @@ internal class KeyboardEngine(
         val track = w != null && w.token.isNotEmpty() && endsWith(prefix + w.token)
         val selected = (selStart >= 0 && selEnd >= 0 && selStart != selEnd) ||
             (!secure && target.selected()?.isNotEmpty() == true)
-        if (selected) { target.commit(""); resetTyping() }
+        if (selected) { val inline = urlField && track && selStart == expectedCaret; target.commit(""); if (!inline) resetTyping() }
         else {
             // A whole character as people see it: 👍🏽, a flag or a family is one, as on Gboard.
             val cluster = if (track || secure) 1 else DeleteSlide.lastCharacter(target.before(32).orEmpty())
@@ -436,7 +440,7 @@ internal class KeyboardEngine(
         return mail.isNotEmpty()
     }
     private fun learnEmails() {
-        if (!emailField || !target.connected) return
+        if (!emailField || noLearning || !target.connected) return
         val text = target.before(256).orEmpty() + target.after(256).orEmpty()
         val typed = EmailSuggestions.found(text)
         if (typed.isNotEmpty()) feedback.learnedEmails = EmailSuggestions.remember(feedback.learnedEmails, typed)

@@ -25,6 +25,6 @@ class FieldTypingTest {
         assertEquals(FieldTyping.Literal, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_PASSWORD, IME_ACTION_SEARCH))
         assertEquals(FieldTyping.Literal, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_EMAIL_ADDRESS, IME_ACTION_SEARCH))
         assertEquals(FieldTyping.Literal, FieldTyping.of(TYPE_CLASS_NUMBER, IME_ACTION_SEARCH))
-        assertEquals(FieldTyping.Literal, FieldTyping.of(TYPE_CLASS_TEXT, IME_ACTION_SEARCH or IME_FLAG_NO_PERSONALIZED_LEARNING))
+        assertEquals(FieldTyping.Full, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_URI, IME_ACTION_GO or IME_FLAG_NO_PERSONALIZED_LEARNING))
     }
 }
