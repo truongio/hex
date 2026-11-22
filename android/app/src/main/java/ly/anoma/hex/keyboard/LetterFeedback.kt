@@ -113,27 +113,8 @@ internal class LetterFeedback(private val host: ViewGroup) {
         fun options(c: Char, language: String): List<String> {
             val lower = c.lowercaseChar()
             val raw = when (language) {
-                "es" -> when (lower) {
-                    'a' -> "aáàäâãåąæāª"; 'e' -> "eéèëêęėē"; 'i' -> "iíïìîįī"; 'o' -> "oóòöôõøœōº"; 'u' -> "uúüùûū"; else -> accents[lower]
-                }
-                "nb" -> when (lower) {
-                    'a' -> "aàáâäãā"; 'o' -> "oôöòóœōõ"; 'æ' -> "æä"; 'ø' -> "øö"; else -> accents[lower]
-                }
-                // Gboard's French and Italian long-press lists (Pixel 8 emulator, black box), most used first;
-                // the apostrophe key holds the typographic quotes Gboard offers there.
-                "fr" -> when (lower) {
-                    'a' -> "aàâæáäãåāª"; 'e' -> "eéèêëēęė"; 'i' -> "iîïìíīįĩ"; 'o' -> "oôœöòóõøōº"; 'u' -> "uùûüúūũ"
-                    'y' -> "yÿ"; 'c' -> "cçćč"; 'n' -> "nñ"; 's' -> "sß"; '\'' -> "'’‘‚‹›"; else -> null
-                }
-                "it" -> when (lower) {
-                    'a' -> "aàáâäæãåāª"; 'e' -> "eèéêëęėē"; 'i' -> "iìíîïĩīį"; 'o' -> "oòóôöõøœōº"; 'u' -> "uùúûüũū"
-                    'c' -> "cçčć"; 'n' -> "nñ"; 's' -> "sß"; else -> null
-                }
                 "sv" -> when (lower) {
                     'a' -> "aàáâãāæ"; 'e' -> "eéèêëēėę"; 'o' -> "oôòóœøōõ"; 'u' -> "uüûùúū"; 'ä' -> "äæ"; 'ö' -> "öø"; else -> accents[lower]
-                }
-                "de" -> when (lower) {
-                    'a' -> "aàáâæãåā"; 'o' -> "oôòóœøōõ"; 'u' -> "uûùúū"; else -> accents[lower]
                 }
                 else -> accents[lower]
             }

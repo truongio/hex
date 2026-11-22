@@ -3,9 +3,7 @@ package ly.anoma.hex.typing
 /** Words the words around them decide rather than the taps (iOS `AutocorrectEngine.contextChoice`,
  * #2144), scored with the model's word pairs. English: the same letters with and without an
  * apostrophe ("id" or "I'd", "its" or "it's") and words that sound alike ("your", "there", "then");
- * "were" and "we're" aren't here, the pairs can't tell them apart. French and Italian: the same
- * letters with and without an accent, both words ("a" or "à", "ou" or "où", Italian "e" or "è"),
- * which iOS leaves to its dictionary. */
+ * "were" and "we're" aren't here, the pairs can't tell them apart. */
 internal object ContextWords {
     private val groups = mapOf(
         "en" to listOf(
@@ -13,10 +11,6 @@ internal object ContextWords {
             listOf("wed", "we'd"), listOf("lets", "let's"), listOf("well", "we'll"),
             listOf("its", "it's"), listOf("your", "you're"), listOf("there", "their", "they're"), listOf("then", "than"),
         ),
-        "fr" to listOf(listOf("a", "à"), listOf("ou", "où"), listOf("la", "là"), listOf("ca", "ça"), listOf("du", "dû"),
-            listOf("sur", "sûr")),
-        "it" to listOf(listOf("e", "è"), listOf("la", "là"), listOf("li", "lì"), listOf("da", "dà"), listOf("ne", "né"),
-            listOf("se", "sé")),
     )
     private val groupOf = groups.mapValues { (_, list) -> list.flatMap { group -> group.map { it.lowercase() to group } }.toMap() }
     // The pairs barely spell contractions (the books split "I'd" into "I" and "'d"), so a

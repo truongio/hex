@@ -44,7 +44,7 @@ internal class SpeechMenu(context: Context, private val ime: HexKeyboard,
             Page.Home -> {
                 row(s(R.string.keyboard_menu_style), more(s(prefs.style.label))) { show(Page.Style) }
                 row(s(R.string.keyboard_menu_language), more(prefs.language?.label ?: s(R.string.keyboard_menu_automatic))) { show(Page.Language) }
-                if (prefs.translation && prefs.spoken == DictationLanguage.Spanish)
+                if (prefs.translation && prefs.spoken != DictationLanguage.English)
                     row(s(R.string.keyboard_menu_next_dictation),
                         more(s(if (ime.nextEnglish != false) R.string.keyboard_paste_english else R.string.keyboard_paste_spoken))) {
                         show(Page.NextDictation)

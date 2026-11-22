@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
-"""Build a keyboard language's capitals sidecar (<lang>.capitals) from Google Books Ngram v3
-1-grams (2020-02-17, CC BY 3.0), the corpus its .hextm model was counted from.
+"""Build English's capitals sidecar (en.capitals) from Google Books Ngram v3 1-grams (2020-02-17,
+CC BY 3.0), the corpus its .hextm model was counted from.
 
     python3 build-capitals.py en MODEL.hextm WORKDIR OUTPUT.capitals scowl-2020.12.07.tar.gz
-    python3 build-capitals.py {es|fr|it} MODEL.hextm WORKDIR OUTPUT.capitals
-    python3 build-capitals.py pl MODEL.hextm WORKDIR OUTPUT.capitals ParlaMint-PL.tgz polimorf.tab.gz
-
-Polish has no Google Books counts: its counts come from ParlaMint 5.0's Polish transcripts (CC BY
-4.0, the corpus build-typing-model.py pl checks marks against), which keep case, leaving out each
-sentence's first word, which any word can start. A word PoliMorf (BSD 2-Clause) lists in lowercase
-is an ordinary word, held at 94% as SCOWL's are in English ("tom" is a volume, "Tom" a name).
 
 Every shard is streamed (curl | gzip -dc, never stored) and its 1980-2019 counts of all-lowercase
 tokens and of tokens with only the first letter capitalised are cached in WORKDIR, so a rerun
@@ -17,28 +10,25 @@ resumes and a rule change renders from WORKDIR/counts.tsv in seconds. Tagged tok
 other casings are ignored.
 
 Each line is word<TAB>percent (the capitalised share, rounded half up), lowercase, sorted by its
-UTF-8 bytes, with a trailing newline, as German's de.capitals:
+UTF-8 bytes, with a trailing newline:
 - a model word whose share is at least 50% over at least 40 uses (the keyboard capitalises
   it when typed in lowercase from 95%);
 - a word of three letters or more outside the model that the books capitalise at least 90% of
-  the time and use at least once per million words: names and places ("tom", "olivia",
-  "tokio"), which the keyboard then takes for real words, as iOS's spelling dictionary does, and
+  the time and use at least once per million words: names and places ("tom", "olivia"),
+  which the keyboard then takes for real words, as iOS's spelling dictionary does, and
   capitalises from 95%. Rarer ones ("goyo", "eby") are more often a typo of a common word. Two model
-  words run together whose pair is ten times as common ("iwant", "apartir") are left out.
+  words run together whose pair is ten times as common ("iwant") are left out.
 
 The keyboard capitalises a word typed in lowercase only where iOS's dictionary would know it only
 with a capital, so a word that is also an ordinary lowercase word is held at 94% (listed, never
-capitalised on its own): in English, one SCOWL (sizes through 70, the lists en.valid comes from)
-spells in lowercase ("united", "jersey", "china"); in Spanish, French and Italian, a model word
-under 98% ("lima", "granada", "san"). In French and Italian, a word whose accented spelling is a
-commoner model word is held, so "ecole" isn't written "Ecole" (books drop accents on capitals:
-"Ecole" is "école").
+capitalised on its own): one SCOWL (sizes through 70, the lists en.valid comes from) spells in
+lowercase ("united", "jersey", "china").
 """
-import hashlib, math, multiprocessing, os, re, struct, subprocess, sys, tarfile, unicodedata
+import hashlib, math, multiprocessing, os, re, struct, subprocess, sys, tarfile
 
 BASE = "https://storage.googleapis.com/books/ngrams/books/20200217"
-FILES = {"en": ("eng", 24), "es": ("spa", 3), "de": ("ger", 8), "fr": ("fre", 6), "it": ("ita", 2)}
-LETTERS = {"en": "a-z", "es": "a-zñáéíóúü", "de": "a-zäöüß", "fr": "a-zàâçéèêëîïôùûüÿœæ", "it": "a-zàèéìíîòóùú"}
+FILES = {"en": ("eng", 24)}
+LETTERS = {"en": "a-z"}
 FIRST_YEAR, LAST_YEAR = 1980, 2019
 MIN_TOTAL = 40
 SOMETIMES = 50
@@ -46,13 +36,8 @@ NAME_SHARE = 90
 NAME_PER_MILLION = 1
 ALWAYS, HELD = 95, 94
 JOINED = 10
-MODEL_ALWAYS = {"en": 95, "es": 98, "fr": 98, "it": 98}
+MODEL_ALWAYS = {"en": 95}
 SCOWL_SHA256 = "5587667caa20c4891390c2d42dbb4d5c4c3f41bee77af1457ece3ba23fb859cc"
-# build-typing-model.py's POLISH_INPUTS.
-PARLAMINT_PL_SHA256 = "66739847c4454e21d524755cea17e41dd923c78cdefe03b6775e9f10720ba957"
-POLIMORF_SHA256 = "2b1f07224c434c8710def382d497cf8221d5764e8d683d2ad34242810ab72746"
-LETTERS["pl"] = "a-ząćęłńóśźż"
-MODEL_ALWAYS["pl"] = 98
 
 
 def scowl_lowercase(path):
@@ -93,8 +78,8 @@ def model_words(path):
 
 
 def joined(word, share, unigram, pair):
-    """Whether `word` is two model words run together, as scanned books (and typists) do ("Iwant",
-    "apartir"): the stored pair is at least JOINED times as common as the word itself (`share` of
+    """Whether `word` is two model words run together, as scanned books (and typists) do ("Iwant"):
+    the stored pair is at least JOINED times as common as the word itself (`share` of
     the corpus). Those are no names."""
     best = 0.0
     for k in range(1, len(word)):
@@ -138,60 +123,11 @@ def count_shard(job):
     return out
 
 
-def sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            h.update(block)
-    return h.hexdigest()
-
-
-def polimorf_lowercase(path):
-    """The forms PoliMorf lists in lowercase."""
-    import gzip
-    assert sha256(path) == POLIMORF_SHA256, path
-    with gzip.open(path, "rt", encoding="utf-8") as f:
-        return {form for form in (line.split("\t", 1)[0] for line in f if "\t" in line)
-                if form == form.lower()}
-
-
-def parlamint_counts(path):
-    """ParlaMint-PL's lowercase and capitalised counts per lowercase spelling, each sentence's first
-    word left out."""
-    import tarfile as tf
-    assert sha256(path) == PARLAMINT_PL_SHA256, path
-    seg = re.compile(r"<seg\b[^>]*>(.*?)</seg>", re.S)
-    sentence = re.compile(r"(?<=[.!?…])\s+")
-    word = re.compile(f"[{LETTERS['pl'].upper()}{LETTERS['pl']}]+")
-    low, cap = {}, {}
-    with tf.open(path) as t:
-        for m in t:
-            if not (m.isfile() and re.search(r"/\d{4}/ParlaMint-PL_[^/]+\.xml$", m.name)):
-                continue
-            text = t.extractfile(m).read().decode("utf-8")
-            for body in seg.findall(text):
-                body = unicodedata.normalize("NFC", re.sub(r"<[^>]+>", " ", body).replace("&amp;", "&"))
-                for s in sentence.split(body):
-                    for token in word.findall(s)[1:]:
-                        key = token.lower()
-                        if token == key:
-                            low[key] = low.get(key, 0) + 1
-                        elif token[0].isupper() and token[1:] == key[1:]:
-                            cap[key] = cap.get(key, 0) + 1
-    return low, cap
-
-
 def merged_counts(lang, work):
     """WORK/counts.tsv: each lowercase spelling with its 1980-2019 lowercase and capitalised counts,
-    counted once from the language's 1-gram shards. build-valid-words.py reads it too."""
+    counted once from the language's 1-gram shards."""
     os.makedirs(work, exist_ok=True)
     merged = os.path.join(work, "counts.tsv")
-    if not os.path.exists(merged) and lang == "pl":
-        low, cap = parlamint_counts(sys.argv[5])
-        with open(merged + ".part", "w", encoding="utf-8") as f:
-            for key in sorted(set(low) | set(cap)):
-                f.write(f"{key}\t{low.get(key, 0)}\t{cap.get(key, 0)}\n")
-        os.replace(merged + ".part", merged)
     if not os.path.exists(merged):
         code, n = FILES[lang]
         jobs = [(lang, i, f"{BASE}/{code}/1-{i:05d}-of-{n:05d}.gz", work) for i in range(n)]
@@ -214,24 +150,14 @@ def merged_counts(lang, work):
 
 def main():
     lang, model, work, output = sys.argv[1:5]
-    lowercase = scowl_lowercase(sys.argv[5]) if lang == "en" else polimorf_lowercase(sys.argv[6]) if lang == "pl" else set()
-    if lang == "en":
-        # Hex's own chat and tech words (en-extra-words.tsv, which build-typing-model.py adds to the
-        # model) are lowercase words: "plz" and "okie", capitalised in books, are held too.
-        extra = os.path.join(os.path.dirname(os.path.abspath(__file__)), "en-extra-words.tsv")
-        lowercase |= {line.split("\t")[0] for line in open(extra, encoding="utf-8") if line.strip() and not line.startswith("#")}
+    lowercase = scowl_lowercase(sys.argv[5])
+    # Hex's own chat and tech words (en-extra-words.tsv, which build-typing-model.py adds to the
+    # model) are lowercase words: "plz" and "okie", capitalised in books, are held too.
+    extra = os.path.join(os.path.dirname(os.path.abspath(__file__)), "en-extra-words.tsv")
+    lowercase |= {line.split("\t")[0] for line in open(extra, encoding="utf-8") if line.strip() and not line.startswith("#")}
     merged = merged_counts(lang, work)
     unigram, pair = model_words(model)
     words = set(unigram)
-    def folded(w):
-        return "".join(c for c in unicodedata.normalize("NFD", w) if not unicodedata.combining(c))
-    accented_twin = set()
-    if lang in ("fr", "it"):
-        twins = {}
-        for w in words:
-            twins.setdefault(folded(w), []).append(w)
-        accented_twin = {w for group in twins.values() if len(group) > 1 for w in group
-                         if w == folded(w) and any(o != w and unigram[o] < unigram[w] for o in group)}
     corpus = 0
     for line in open(merged, encoding="utf-8"):
         _, lo, ca = line.rstrip("\n").split("\t")
@@ -252,7 +178,7 @@ def main():
         elif (len(key) < 3 or share < NAME_SHARE or total * 1_000_000 < NAME_PER_MILLION * corpus
               or joined(key, total / corpus, unigram, pair)):
             continue
-        if key in lowercase or key in accented_twin:
+        if key in lowercase:
             share = min(share, HELD)
         rows.append((key, share))
     rows.sort(key=lambda r: r[0].encode("utf-8"))

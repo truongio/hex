@@ -7,21 +7,15 @@ import java.util.*;
 
 /** Runs via app_process against the actual installed APK. Never built into Hex. */
 public final class Replay {
-    static KeyGrid originalGeometry(String language) {
+    static KeyGrid originalGeometry() {
         // Portrait KeyboardLayout at 402 pt (side 6.5, gap 6, letter height 45, row gap 11), and its
-        // space bar. German and Bokmål have Android's eleven-key rows at a 36 pt pitch; French is
-        // AZERTY, its bottom row's apostrophe key (never typed) left out of the letters.
-        boolean wide = language.equals("de") || language.equals("nb");
-        double pitch = wide ? 36 : 39.5; Map<Character,KeyPoint> points = new LinkedHashMap<>();
-        String[] rows = language.equals("de") ? new String[]{"qwertzuiopü", "asdfghjklöä", "yxcvbnm"}
-            : language.equals("nb") ? new String[]{"qwertyuiopå", "asdfghjkløæ", "zxcvbnm"}
-            : language.equals("fr") ? new String[]{"azertyuiop", "qsdfghjklm", "wxcvbn'"}
-            : new String[]{"qwertyuiop", language.equals("es") ? "asdfghjklñ" : "asdfghjkl", "zxcvbnm"};
+        // space bar.
+        double pitch = 39.5; Map<Character,KeyPoint> points = new LinkedHashMap<>();
+        String[] rows = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
         for (int row=0; row<rows.length; row++) {
             String letters=rows[row];
             for (int i=0; i<letters.length(); i++)
-                if (letters.charAt(i) != '\'')
-                    points.put(letters.charAt(i),new KeyPoint(201 + (i-(letters.length()-1)/2.0)*pitch,66.5+56*row));
+                points.put(letters.charAt(i),new KeyPoint(201 + (i-(letters.length()-1)/2.0)*pitch,66.5+56*row));
         }
         return new KeyGrid(points, pitch, 56, new KeyRect(64.76, 212, 303.1, 257));
     }
@@ -96,8 +90,6 @@ public final class Replay {
     // A measured keyboard's touch cells (left, top, right, bottom) and pixels per dp; null and 1 for the
     // benchmark's own layout, whose cells tile the rows around the centres and whose units are points.
     static Map<Character,double[]> cells; static double density=1;
-    // French AZERTY's apostrophe key on the letter rows, which the keyboard reads as it reads the letters.
-    static KeyPoint apostropheKey;
     static Map<Character,Double> near(KeyGrid grid, char hit, double x, double y) {
         // KeyPlaneView.likelier: a shifted label uses the same cell, with shifted neighbours.
         boolean shifted=Character.isUpperCase(hit); hit=Character.toLowerCase(hit);
@@ -113,9 +105,7 @@ public final class Replay {
             }
             return out;
         }
-        Map<Character,KeyPoint> keys = new HashMap<>(grid.getCentres());
-        if (apostropheKey != null) keys.put('\'', apostropheKey);
-        for (Map.Entry<Character,KeyPoint> e : keys.entrySet()) {
+        for (Map.Entry<Character,KeyPoint> e : grid.getCentres().entrySet()) {
             if (e.getKey() == hit) continue;
             KeyPoint c = e.getValue();
             double dx = Math.max(0, Math.abs(x - c.getX()) - grid.getPitchX() / 2), dy = Math.max(0, Math.abs(y - c.getY()) - grid.getPitchY() / 2);
@@ -168,9 +158,7 @@ public final class Replay {
         boolean hasIos=false;
         TypingModel model=TypingModel.Companion.file(new File(args[0]),lang);
         // `MODEL SET LANG OUT [GEOMETRY]`: with a measured geometry, any number of sentences.
-        KeyGrid grid=args.length>4 ? geometry(args[4]) : originalGeometry(lang); TypingWord state=new TypingWord(new SpatialDecoder(model), true);
-        apostropheKey=lang.equals("fr")&&cells==null ? new KeyPoint(201+3*39.5,66.5+56*2) : null;
-        boolean apostropheOnLetters=lang.equals("fr");
+        KeyGrid grid=args.length>4 ? geometry(args[4]) : originalGeometry(); TypingWord state=new TypingWord(new SpatialDecoder(model), true);
         kept.add(state);
         List<Long> letters=new ArrayList<>(), spaces=new ArrayList<>();
         int count=0, total=0, matches=0; int[] errors=new int[3], exact=new int[3];
@@ -200,9 +188,9 @@ public final class Replay {
                     from=end+(end<want.length()&&want.charAt(end)==' '?1:0);
                 }
                 List<String> shown=Collections.emptyList();
-                // As the keyboard: a letter starts a word it reads only after a space, an opening
-                // mark or (French, Italian) an elision; anything else is typed as it is until the next
-                // space. An apostrophe ends the word as typed.
+                // As the keyboard: a letter starts a word it reads only after a space or an opening
+                // mark; anything else is typed as it is until the next space. An apostrophe ends the
+                // word as typed.
                 boolean tracked=true;
                 for(int i=0;i<typed.length();i++) {
                     char key=typed.charAt(i); double x, y;
@@ -213,14 +201,13 @@ public final class Replay {
                     } else {
                         KeyPoint p=grid.getCentres().get(Character.toLowerCase(key));
                         if(key==' ') { KeyRect space=grid.getSpace(); p=new KeyPoint((space.getLeft()+space.getRight())/2,space.getCentreY()); }
-                        if(key=='\'') p=apostropheKey;
                         explicit=p==null && Character.isLetter(key); // IME long-press choice: w.explicit, no spatial evidence
                         x=p==null ? 0 : p.getX(); y=p==null ? 0 : p.getY();
                     }
                     long start=System.nanoTime();
-                    // As the keyboard: a touch on a letter key, or on French's apostrophe key among them, types
-                    // the likelier neighbour when it is near enough (the engine leaves a word it isn't reading alone).
-                    if(!explicit && (Character.isLetter(key)||(key=='\''&&apostropheOnLetters))) key=likelierKey(state,out.toString(),key,x,y,grid);
+                    // As the keyboard: a touch on a letter key types the likelier neighbour when it is near
+                    // enough (the engine leaves a word it isn't reading alone).
+                    if(!explicit && Character.isLetter(key)) key=likelierKey(state,out.toString(),key,x,y,grid);
                     if(key!=' '&&!Character.isLetter(key)) {
                         out.append(key); state.reset(out.toString()); tracked=false; shown=Collections.emptyList();
                     } else if(key==' '&&!tracked) {

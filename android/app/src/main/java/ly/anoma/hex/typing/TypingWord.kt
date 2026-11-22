@@ -43,7 +43,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
             if (value != field) { field = value; decision = null }
         }
     /** Settings › Keyboard › Auto-capitalisation (iOS AutocorrectEngine.addsCapitals). Off, nothing adds a
-     * capital you didn't type: "i" stays "i", "monday" "monday", German nouns as typed, the strip and its
+     * capital you didn't type: "i" stays "i", "monday" "monday", the strip and its
      * predictions lowercase; your own words and shortcuts keep theirs. */
     var addsCapitals = true
     /** Starts a word after `before`. The word a space just finished stays revisable only when
@@ -217,23 +217,17 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         val token = currentToken(before)
         if (token == null && before.lastOrNull()?.let { it.isLetterOrDigit() || it == '\'' } == true) return hit
         val prefix = (token ?: "").lowercase()
-        // Right after an elided article or pronoun ("l", "qu"), the apostrophe key is the likeliest: the
-        // books split the commonest elisions off ("l'", "d'"), so the word list can't say so itself.
-        val elided = token != null && token.lowercase() in ELISIONS[model.language].orEmpty() &&
-            before.dropLast(token.length).lastOrNull().let { boundary(it) }
         class Share(val m: TypingModel, val mass: DoubleArray, val total: Double, val weight: Double)
-        fun share(m: TypingModel, weight: Double, elision: Boolean): Share? {
+        fun share(m: TypingModel, weight: Double): Share? {
             val continuations = m.continuations(prefix) ?: return null
             val keyed = keys.mapTo(HashSet()) { m.code(it.lowercaseChar()) }
             val mass = DoubleArray(continuations.size)
             for (code in 1 until continuations.size) if (continuations[code] > 0)
                 mass[if (code in keyed) code else m.bases[code]] += continuations[code]
-            val total = mass.sum()
-            if (elision && m.apostrophe != 0) mass[m.apostrophe] = maxOf(mass[m.apostrophe], total)
-            return Share(m, mass, total, weight)
+            return Share(m, mass, mass.sum(), weight)
         }
-        val shares = listOfNotNull(share(model, kotlin.math.exp(-switchCost), elided),
-            other?.let { share(it.model, kotlin.math.exp(-otherSwitchCost), false) })
+        val shares = listOfNotNull(share(model, kotlin.math.exp(-switchCost)),
+            other?.let { share(it.model, kotlin.math.exp(-otherSwitchCost)) })
         if (shares.isEmpty()) return hit
         fun odds(c: Char): Double? {
             var p = 0.0; var any = false
@@ -254,15 +248,8 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
     }
 
     /** Whether a letter typed after `before` starts a word the keyboard should read: after a space or
-     * an opening mark (`boundary`), and in French and Italian also right after an elided article
-     * or pronoun ("l'", "qu'", "dell'"), so "l'hpmme" is read as "homme" after "l'". */
-    fun startsWord(before: String): Boolean {
-        if (boundary(before.lastOrNull())) return true
-        val elisions = ELISIONS[model.language] ?: return false
-        if (before.lastOrNull() != '\'' && before.lastOrNull() != '\u2019') return false
-        val prefix = before.dropLast(1).takeLastWhile { it.isLetter() }.lowercase()
-        return prefix in elisions && before.dropLast(1 + prefix.length).lastOrNull().let { boundary(it) }
-    }
+     * an opening mark (`boundary`). */
+    fun startsWord(before: String) = boundary(before.lastOrNull())
 
     /** Your text replacement whose shortcut ends `before` (the text before the cursor), from the personal
      * dictionary: on space, a closing mark or return, put it in before anything else, autocorrect on
@@ -307,14 +294,13 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
             } else cased(it) }
         }
         if (allCaps || !spatial) return null
-        // A name, day or place typed in lowercase takes its capital ("mary" -> "Mary"), and so does a
-        // German noun ("haus" -> "Haus"), as the capitals list beside the model says.
+        // A name, day or place typed in lowercase takes its capital ("mary" -> "Mary"), as the capitals
+        // list beside the model says.
         val fix = decision().replace?.let { if (decoder.personal?.owns(it) == true) yours(it) else cased(it) }
             ?: return capitalised(token) ?: second?.let { capitalised(token, it) }
         // A missed space after English "i" ("iwant") gives "I want", as "i" alone does.
         if (model.language == "en" && ' ' in fix) return fix.split(' ').joinToString(" ") { if (it == "i") "I" else it }
-        // German's model is lowercase: a noun it corrects to takes its capital ("hsus" -> "Haus").
-        return if (model.language == "de" && ' ' !in fix) capitalised(fix) ?: fix else fix
+        return fix
     }
 
     private fun capitalisedName(word: String): String? {
@@ -324,11 +310,11 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
     }
 
     // `word` with its capital when it is all lowercase and the books nearly always write it with one
-    // (95%), or, in German, half the time after an article or determiner ("das leben"); else null.
+    // (95%); else null.
     private fun capitalised(word: String, m: TypingModel = model): String? {
         if (word.length < 2 || word != word.lowercase()) return null
         val share = m.capitals?.percent(word) ?: return null
-        if (share < 95 && !(m.language == "de" && share >= 50 && previousText in germanDeterminers)) return null
+        if (share < 95) return null
         val first = word.first().uppercase()
         return if (first.length == 1) first + word.drop(1) else null
     }
@@ -425,16 +411,10 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
             "well" to "we'll", "its" to "it's", "lets" to "let's", "hell" to "he'll", "shell" to "she'll")
         // Hex's own short lists, as iOS: a sentence's common first words, a clause's after a comma, and
         // the commonest words for next-word slots the model can't fill.
-        private val sentenceStarters = mapOf("en" to listOf("I", "the", "I'm"), "es" to listOf("yo", "el", "la"),
-            "de" to listOf("ich", "das", "die"), "nb" to listOf("jeg", "det", "vi"), "fr" to listOf("je", "le", "la"),
-            "it" to listOf("io", "il", "la"), "sv" to listOf("jag", "det", "vi"))
-        private val clauseStarters = mapOf("en" to listOf("I", "but", "and"), "es" to listOf("que", "pero", "y"),
-            "de" to listOf("und", "aber", "ich"), "nb" to listOf("og", "men", "jeg"), "fr" to listOf("et", "mais", "je"),
-            "it" to listOf("e", "ma", "che"), "sv" to listOf("och", "men", "jag"))
+        private val sentenceStarters = mapOf("en" to listOf("I", "the", "I'm"), "sv" to listOf("jag", "det", "vi"))
+        private val clauseStarters = mapOf("en" to listOf("I", "but", "and"), "sv" to listOf("och", "men", "jag"))
         private val commonWords = mapOf("en" to listOf("the", "to", "and", "a", "I", "of"),
-            "es" to listOf("de", "que", "y", "la", "el", "en"), "de" to listOf("und", "die", "der", "ich", "ist", "das"),
-            "nb" to listOf("og", "i", "det", "er", "på", "som"), "fr" to listOf("de", "la", "et", "le", "je", "à"),
-            "it" to listOf("di", "e", "che", "la", "il", "a"), "sv" to listOf("och", "i", "att", "det", "som", "en"))
+            "sv" to listOf("och", "i", "att", "det", "som", "en"))
         private val midSentenceMarks = ",;:)\"'\u201D\u2019\u2014"
         /** The word right before the cursor, or null inside a handle, path, address or number. */
         fun currentToken(before: CharSequence): String? {
@@ -464,13 +444,6 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
             rest = rest.trimEnd { it in "\"')]\u201D\u2019" }
             return rest.lastOrNull()?.let { it in ".!?" } ?: false
         }
-        // After these German writes the noun with a capital ("das Haus", "im Haus", "mein Haus"), so
-        // a word the books write both ways is a noun here (iOS GermanCapitals.determiners).
-        private val germanDeterminers = ("der die das den dem des ein eine einen einem einer eines kein keine keinen keinem " +
-            "keiner keines mein meine meinen meinem meiner meines dein deine deinen deinem deiner deines sein seine " +
-            "seinen seinem seiner seines ihre ihren ihrem ihrer ihres unser unsere unseren unserem unserer unseres euer " +
-            "eure euren eurem eurer eures dies dieser diese dieses diesem diesen jeder jede jedes jedem jeden im in am " +
-            "zum zur vom beim ins ans").split(' ').toSet()
         // Hosts give a window of the text: compare its last 64 characters once both are that long.
         private fun sameText(a: String, b: String) =
             if (a.length >= 64 && b.length >= 64) a.takeLast(64) == b.takeLast(64) else a == b
@@ -484,11 +457,6 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         // The word before the cursor, lowercase; an elided one without its apostrophe ("l'" as "l").
         fun previousWord(before: String) = before.trimEnd().takeLastWhile { it.isLetter() || it == '\'' || it == '\u2019' }
             .lowercase().replace('\u2019', '\'').trimEnd('\'')
-        // The articles and pronouns French and Italian elide before a vowel; a word starts after them.
-        private val ELISIONS = mapOf(
-            "fr" to setOf("c", "d", "j", "l", "m", "n", "s", "t", "qu", "jusqu", "lorsqu", "puisqu", "quoiqu", "presqu"),
-            "it" to setOf("c", "d", "l", "m", "n", "s", "t", "v", "un", "all", "dall", "dell", "nell", "sull", "coll",
-                "quest", "quell", "bell", "sant", "tutt", "nessun", "buon"))
         fun boundary(c: Char?) = c == null || c.isWhitespace() || c in "([{“‘\",;!?"
     }
 }

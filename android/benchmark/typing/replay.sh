@@ -15,7 +15,7 @@ adb shell chmod 444 "$dev/replay.jar"
 apk=$(adb shell pm path ly.anoma.hex | tr -d '\r' | sed 's/^package://')
 adb push app/src/main/assets/typing/never-suggest.tsv "$dev/never-suggest.tsv" >/dev/null
 mkdir -p "$T/outputs"
-for lang in en es de nb fr it; do
+for lang in en; do
     [ -f "$T/bench/$lang.jsonl" ] || continue
     adb push "app/src/main/assets/typing/$lang.hextm" "$dev/$lang.hextm" >/dev/null
     for side in capitals valid; do

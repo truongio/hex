@@ -73,7 +73,7 @@
     <string name="dictation_end_with_period">句末加句号</string>
     <string name="dictation_end_with_period_detail">关闭后去掉末尾的句号，保留问号和感叹号</string>
     <string name="settings_translate">翻译我说的话</string>
-    <string name="settings_translate_detail">用西班牙语听写，以英语写出</string>
+    <string name="settings_translate_detail">用瑞典语听写，以英语写出</string>
     <string name="settings_clean">整理我说的话</string>
     <string name="settings_clean_detail">去掉“嗯”、重复和改口的词</string>
     <string name="dictation_vocabulary">自定词汇</string>

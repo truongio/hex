@@ -101,10 +101,10 @@ internal class PersonalWords(private val model: TypingModel, words: Collection<S
         }
         private const val LIMIT = 5_000
 
-        /** Whether a personal dictionary entry's locale ("en_US", "nb_NO", none for every language)
-         * applies to the model's language; Bokmål also takes "no". */
+        /** Whether a personal dictionary entry's locale ("en_US", "sv_SE", none for every language)
+         * applies to the model's language. */
         fun applies(locale: String?, language: String) = locale.isNullOrEmpty() ||
-            locale.substringBefore('_').lowercase().let { it == language || (language == "nb" && it == "no") }
+            locale.substringBefore('_').lowercase() == language
 
         /** The personal dictionary's words and shortcuts for the model's language (or every language).
          * Android lets only an enabled input method or spell checker read it, with no permission, and

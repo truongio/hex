@@ -126,9 +126,7 @@ val verifyInter by tasks.registering {
 // Pin the licensed HXTM files. An older prototype word-pair list cannot slip into an APK.
 val verifyTypingModels by tasks.registering {
     val dir = file("src/main/assets/typing")
-    val names = listOf("en.hextm", "es.hextm", "de.hextm", "nb.hextm", "fr.hextm", "it.hextm", "sv.hextm", "en.valid",
-        "es.valid", "de.valid", "nb.valid", "fr.valid", "it.valid", "sv.valid",
-        "en.capitals", "es.capitals", "de.capitals", "fr.capitals", "it.capitals", "sv.capitals")
+    val names = listOf("en.hextm", "sv.hextm", "en.valid", "sv.valid", "en.capitals", "sv.capitals")
     val manifest = dir.resolve("SHA256SUMS")
     inputs.files(names.map(dir::resolve) + manifest)
     doLast {

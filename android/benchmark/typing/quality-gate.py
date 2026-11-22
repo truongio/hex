@@ -49,20 +49,6 @@ def align(reference, output):
     return scores[n][m][0], paired
 
 
-def changed_spans(ref, hyp, paired):
-    """Describe changes between exact-word anchors, keeping splits and joins readable."""
-    i = j = 0
-    anchors = [(k, p) for k, p in enumerate(paired) if p is not None and ref[k].lower() == hyp[p].lower()]
-    for k, p in anchors + [(len(ref), len(hyp))]:
-        before, after = ref[i:k], hyp[j:p]
-        if before:
-            if len(before) == len(after):
-                yield from zip(before, after)
-            else:
-                yield ' '.join(before), ' '.join(after)
-        i, j = k + 1, p + 1
-
-
 def tally(matches, opportunities):
     return dict(count=matches, total=opportunities,
                 percent=100 * matches / opportunities if opportunities else None)
@@ -78,17 +64,13 @@ def score(lang, mapping, cases, limits, tmp, command):
     holds, *vocabulary = subprocess.check_output(command + ['local.hex.bench.GateLexicon', model, lang],
                                                  encoding='utf-8').splitlines()
     actual = dict(pair.split(':') for pair in holds.split())
-    # Most omissions tap the hold key once. Some have a conventional typed substitute (ß → ss).
-    holds = {c: spec['hold'] if isinstance(spec, dict) else spec for c, spec in mapping.items()}
-    substitutes = {c: spec['substitute'] if isinstance(spec, dict) else spec for c, spec in mapping.items()}
-    if actual != holds:
+    if actual != mapping:
         raise ValueError(f'{lang}: accent-keys.json disagrees with KeyboardLetters/LetterFeedback: {actual}')
     scored = set(vocabulary)
     with (MODELS / (lang+'.valid')).open(encoding='utf-8') as valid:
         lexicon = scored.union(line.split('\t')[0].rstrip('\n') for line in valid)
-    table = str.maketrans(substitutes)
-    shifted = str.maketrans({**substitutes, **{('ẞ' if c == 'ß' else c.upper()): sub.upper()
-                                                for c, sub in substitutes.items()}})
+    table = str.maketrans(mapping)
+    shifted = str.maketrans({**mapping, **{c.upper(): sub.upper() for c, sub in mapping.items()}})
     ambiguous_forms = set()
     for word in lexicon:
         base = word.translate(table)
@@ -96,15 +78,6 @@ def score(lang, mapping, cases, limits, tmp, command):
             ambiguous_forms.update((word, base))
 
     accents = [text for _, _, text, _, _ in rows if text != text.translate(shifted)][:500]
-    extra = HERE / 'held-out' / ('accent-'+lang+'.tsv')
-    if extra.exists():
-        for row in extra.read_text(encoding='utf-8').splitlines():
-            _, _, text = row.split('\t')
-            if text.translate(shifted) == text:
-                raise ValueError(f'{lang}: ineligible accent supplement: {text}')
-            accents.append(text)
-    if len(accents) > 500:
-        raise ValueError(f'{lang}: incorrect accent coverage ({len(accents)} sentences)')
     inputs = [typed + '\t' + points for _, _, _, typed, points in rows]
     inputs += [row[2] + ' ' for row in rows]
     inputs += [text.translate(shifted) + ' ' for text in accents]
@@ -122,8 +95,7 @@ def score(lang, mapping, cases, limits, tmp, command):
     raw = sum(align(ref, row[3].lower().split())[0] for ref, row in zip(refs, rows))
     errors = sum(align(ref, hyp)[0] for ref, hyp in zip(refs, words))
     changed = harm = opportunities = 0
-    changes = Counter()
-    for i, (ref, hyp) in enumerate(zip(refs, words[count:2*count])):
+    for ref, hyp in zip(refs, words[count:2*count]):
         paired = align(ref, hyp)[1]
         for w, pos in zip(ref, paired):
             got = hyp[pos] if pos is not None else None
@@ -132,8 +104,6 @@ def score(lang, mapping, cases, limits, tmp, command):
                 opportunities += 1
                 if got in ambiguous_forms and w != got and w.translate(table) == got.translate(table):
                     harm += 1
-        if lang == 'nb':
-            changes.update(changed_spans(rows[i][2].split(), output[count+i].split(), paired))
     buckets = ('unambiguous', 'ambiguous', 'plain_known_target_unknown')
     totals, hits, miss_source = Counter(), Counter(), Counter()
     for text, hyp in zip(accents, words[2*count:]):
@@ -171,15 +141,12 @@ def score(lang, mapping, cases, limits, tmp, command):
                 correct_changed=changed, correct_changed_percent=change_rate, accent_sentences=len(accents),
                 accent_restoration=restoration, unambiguous_status=accent_status, unambiguous_misses_by_vocabulary=dict(miss_source),
                 ambiguous_harm=tally(harm, opportunities),
-                top_clean_changes=[dict(typed=a, became=b, count=n) for (a, b), n in
-                                   sorted(changes.items(), key=lambda pair: (-pair[1], pair[0]))[:10]],
                 critical_cases=critical, failed=failed, passed=not failed)
 
 
 def main():
     maps, cases, limits = map(config, ['accent-keys.json', 'critical-cases.json', 'thresholds.json'])
     languages = sorted(p.stem for p in MODELS.glob('*.hextm') if (HERE/'held-out'/(p.stem+'.tsv.gz')).is_file())
-    # A language may be configured before Android has its model (Polish: iOS's typing-gate.py).
     if not set(languages) <= set(maps) & set(cases):
         raise ValueError('Model/set coverage does not match the configured gate languages')
     parser = argparse.ArgumentParser(description=__doc__)

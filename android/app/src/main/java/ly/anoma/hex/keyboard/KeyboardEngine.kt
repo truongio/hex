@@ -509,7 +509,7 @@ internal class KeyboardEngine(
         // The keyboard's own word list for that language, when loaded, knows far more ordinary words than
         // the speech side's short list: a word it has in lowercase and the books rarely capitalise
         // loses Whisper's capital; a name keeps it (iOS asks UITextChecker the same).
-        val model = models[if (language == "no") "nb" else language]?.model
+        val model = models[language]?.model
         val shaped = if (model == null) SpokenText.continuing(text, before, language)
             else SpokenText.continuing(text, before, language) { model.index(it) >= 0 && (model.capitals?.percent(it) ?: -1) < 50 }
         val result = insertion(shaped, before?.lastOrNull(), target.after(1)?.firstOrNull())

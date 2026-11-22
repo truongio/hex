@@ -14,8 +14,7 @@ internal object SpokenText {
         val spoken = SpokenCleanup.counts(SpokenCleanup.symbols(spelled.trim(), language), language)
         val cleaned = if (options.clean) SpokenCleanup.clean(spoken, language) else spoken
         val styled = style(cleaned, options.style, language, options.endWithPeriod, options.formatLists, options.spokenPunctuation)
-        // French spacing goes last, since every style takes the spaces before marks out; Verbatim keeps the model's.
-        return FrenchSpacing.apply(finished(styled, options), language)
+        return finished(styled, options)
     }
 
     private fun finished(styled: String, options: SpeechOptions): String {
@@ -51,12 +50,10 @@ internal object SpokenText {
 
     private fun code(language: String?) = language?.substringBefore('-')?.substringBefore('_')?.lowercase(Locale.ROOT) ?: "en"
 
-    /** Each language trims only its own hesitation sounds: English "er" is Norwegian "is". */
+    /** Each language trims only its own hesitation sounds. */
     fun fillers(language: String?) = when (code(language)) {
         "en" -> "um+|uh+|er+m*|ah+"
-        "nb", "nn", "no", "da", "sv" -> "e+h+m*|ø+h+m*|ö+h+m*|hm+"
-        "es" -> "e+h+m*|e+m+|m{2,}|hm+"
-        "de" -> "ä+h+m*|ö+h+m*|hm+"
+        "sv" -> "e+h+m*|ø+h+m*|ö+h+m*|hm+"
         else -> null
     }
 
@@ -377,10 +374,10 @@ internal object SpokenText {
 
     /** The dictation as it goes in after [before] (iOS insertionText's case rule): mid-sentence, its
      * first word is lowercased unless it is "I", an acronym, has inner capitals or [isWord] doesn't
-     * know its lowercase form (likely a name). German capitalizes nouns, so it keeps the case. */
+     * know its lowercase form (likely a name). */
     fun continuing(text: String, before: String?, language: String?,
                    isWord: (String) -> Boolean = { commonWord(it, language) }): String {
-        if (startsSentence(before) || code(language) in setOf("de", "lb")) return text
+        if (startsSentence(before)) return text
         return continuingSentence(text, isWord)
     }
 
@@ -408,17 +405,7 @@ internal object SpokenText {
             "out over please so some still such than thank thanks that that's the their them then there there's these they " +
             "this those though through to too under until up us very was we well were what when where which while who why " +
             "will with would yeah yes yet you your").split(' ').toSet(),
-        "es" to ("a al algo así aunque bien cada como con cuando de del desde donde el ella ellas ellos en entonces era es " +
-            "esa ese eso esta este esto está están estoy fue gracias ha hay la las le les lo los me mi mientras muy más nada " +
-            "ni no nos o otra otro para pero poco por porque pues que qué se si sin sobre solo son su sus también tan te " +
-            "tengo tiene todo todos tu un una uno vale vamos y ya yo").split(' ').toSet(),
-        "fr" to ("à au aux avec ce cela ces cette c'est comme dans de des donc du elle elles en est et était il ils je j'ai la le les leur lui mais me merci moi mon ne nous on ou où oui par pas peut plus pour quand que qui sa sans se ses si son sont sur ta te tes toi ton tout tous très tu un une vous vos votre y ça").split(' ').toSet(),
-        "it" to ("a al alla anche che chi ci come con da dal del della di e è gli grazie ha hanno i il in io la le li lo lui ma mi mio mia ne nel nella no non noi per perché più poi qui se si sì sono su sua suo ti tu tutto tutti un una uno voi").split(' ').toSet(),
-        "nl" to ("aan als bij dan dat de die dit door een en er het hij hem hun ik in is je jij kan maar me met mijn naar niet nog nu of om ook op te toch tot u uit van voor wat we wij wel zal ze zij zijn").split(' ').toSet(),
-        "no" to ("alle at av bare da de del dem den denne der det dette du eller en er et etter for fordi fra går ha han " +
-            "har hun hva hvis hvor i igjen ikke inn ja jeg kan kanskje med men mer meg min nei når og også om opp på så " +
-            "seg skal som til takk uten var vi vil være å").split(' ').toSet(),
-    ).let { it + ("nb" to it.getValue("no")) + ("nn" to it.getValue("no")) }
+    )
 
     /** Whether text before the cursor leaves the next words at a sentence start: none (or only
      * spaces), a line break, or a sentence's mark (closing quotes or brackets after it count too). */

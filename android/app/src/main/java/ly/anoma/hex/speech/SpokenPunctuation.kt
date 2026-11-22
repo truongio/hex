@@ -4,11 +4,11 @@ import java.text.Normalizer
 import java.util.Locale
 
 /** Punctuation said by name ("comma", "question mark", "open quote") written as the mark, with
- * string rules and no model, in English, Spanish, French, German, Italian and Portuguese; other
- * languages pass through. Mirrors iOS SpokenPunctuation, guards included: a name after a
- * determiner, preposition, number or noun-making word, before a word that continues the noun, or
- * inside a compound stays a word, and everyday-noun names also need command-like placement. A mark
- * the model already wrote beside a name is replaced, never doubled. French spacing comes later. */
+ * string rules and no model, in English; other languages pass through. Mirrors iOS
+ * SpokenPunctuation, guards included: a name after a determiner, preposition, number or
+ * noun-making word, before a word that continues the noun, or inside a compound stays a word, and
+ * everyday-noun names also need command-like placement. A mark the model already wrote beside a
+ * name is replaced, never doubled. */
 internal object SpokenPunctuation {
     fun format(text: String, language: String?): String {
         val table = table(language) ?: return text
@@ -17,7 +17,7 @@ internal object SpokenPunctuation {
     }
 
     private val diacritics = Regex("\\p{Mn}+")
-    /** Lowercased, accents folded, curly apostrophes straight: "D’Interrogation" reads "d'interrogation". */
+    /** Lowercased, accents folded, curly apostrophes straight. */
     private fun fold(s: String) =
         diacritics.replace(Normalizer.normalize(s.lowercase(Locale.ROOT), Normalizer.Form.NFD), "").replace('’', '\'')
 
@@ -73,7 +73,7 @@ internal object SpokenPunctuation {
                 val found = if (tokens[index].isWord) command(index) else null
                 if (found == null) { emit(tokens[index]); index++; continue }
                 val (command, end) = found
-                // A name kept as said stays whole: "a dos puntos" never loses its "puntos".
+                // A name kept as said stays whole.
                 index = if (allows(command, index, end)) apply(command, end) else { for (i in index until end) emit(tokens[i]); end }
             }
             return out.toString()
@@ -96,7 +96,7 @@ internal object SpokenPunctuation {
             return null
         }
 
-        /** Between the words only spaces, a hyphen ("point-virgule") or one comma a model heard
+        /** Between the words only spaces, a hyphen ("semi-colon") or one comma a model heard
          * as a pause ("close, Paren"). */
         private fun phraseEnd(words: List<String>, index: Int): Int? {
             var position = index
@@ -121,7 +121,7 @@ internal object SpokenPunctuation {
         }
 
         /** Whether a closing quote name follows end, with words between. */
-        private fun closingQuote(end: Int, toggles: Boolean): Boolean {
+        private fun closingQuote(end: Int): Boolean {
             var index = end
             var between = false
             while (index < tokens.size) {
@@ -130,7 +130,7 @@ internal object SpokenPunctuation {
                 if (found != null) {
                     val mark = found.first.mark
                     if (mark is Close && mark.pair == Bracket.Quote) return between
-                    if (mark is ToggleQuote) return toggles && between
+                    if (mark is ToggleQuote) return false
                     index = found.second
                     between = true
                     continue
@@ -155,7 +155,7 @@ internal object SpokenPunctuation {
             if (family != Family.Hyphen && before.lastOrNull().let { it == '-' || it == '/' }) return false
 
             // A name: "I'll text Dash later", "George Smiley".
-            if (table.capitalizesSentences && tokens[index].text.first().isUpperCase() && previous != null) {
+            if (tokens[index].text.first().isUpperCase() && previous != null) {
                 if (family == Family.Dash && before.none { it in ".!?" }) return false
                 if (family == Family.Smiley && previous.text.first().isUpperCase()) return false
             }
@@ -167,7 +167,7 @@ internal object SpokenPunctuation {
                 is ToggleQuote -> {
                     opens = !isOpen(Bracket.Quote)
                     closes = !opens
-                    if (opens && (next == null || !closingQuote(end, mark.toggles))) return false
+                    if (opens && (next == null || !closingQuote(end))) return false
                 }
                 is Close -> { if (!isOpen(mark.pair)) return false; closes = true }
                 else -> {}
@@ -193,8 +193,7 @@ internal object SpokenPunctuation {
 
             if (nextDirect) {
                 val word = next!!.folded
-                if (word in table.followers || table.familyFollowers[family]?.contains(word) == true ||
-                    table.followerPrefixes.any { word.startsWith(it) }) return false
+                if (word in table.followers || table.familyFollowers[family]?.contains(word) == true) return false
             }
 
             when (mark) {
@@ -211,8 +210,7 @@ internal object SpokenPunctuation {
                 val atLineEnd = next == null
                 val pauseAfter = after.firstOrNull { it != ' ' && it != '\t' }?.let { it in pauseMarks || it in closers } ?: false
                 val startsClause = nextDirect && next!!.let { n ->
-                    n.folded in table.starters || table.starterPrefixes.any { n.folded.startsWith(it) } ||
-                        (table.capitalizesSentences && n.text.first().isUpperCase())
+                    n.folded in table.starters || n.text.first().isUpperCase()
                 }
                 val anotherCommand = next != null && command(end + 1) != null
                 if (!(atLineEnd || pauseAfter || startsClause || anotherCommand)) return false
@@ -223,18 +221,13 @@ internal object SpokenPunctuation {
         private fun number(token: Token) = token.folded.all { numberChar(it.code) } || token.folded in table.numbers
 
         /** Whether the word before a name makes the name a noun: "a period", "the comma",
-         * "trial period", "Sarah's colon", "ein wichtiger Punkt". */
+         * "trial period", "Sarah's colon". */
         private fun nounPhrase(previous: Token, index: Int, family: Family): Boolean {
             val word = previous.folded
             if (word in table.blockers || table.familyBlockers[family]?.contains(word) == true) return true
-            // An English or German sentence may end on a preposition or a particle ("Who is it
-            // for?", "Ruf mich an."), a noun phrase not.
-            if (word in table.prepositions && !(table.prepositionsEndSentences && family in sentenceEnds)) return true
-            if (table.possessives && word.endsWith("'s") && word !in table.starters) return true
-            // German nouns are capitalized: a lowercase word between an article and the name is
-            // an adjective ("ein wichtiger Punkt"), not the end of a clause ("Ich komme morgen").
-            return table.adjectivesBeforeNouns && previous.text.first().isLowerCase() && index >= 4 &&
-                tokens[index - 3].text.all { it == ' ' } && tokens[index - 4].folded in table.blockers
+            // A sentence may end on a preposition ("Who is it for?"), a noun phrase not.
+            if (word in table.prepositions && family !in sentenceEnds) return true
+            return word.endsWith("'s") && word !in table.starters
         }
 
         /** Writes the command's mark and returns where reading goes on. */
@@ -249,11 +242,6 @@ internal object SpokenPunctuation {
                     trimEnd(" \t" + pauseMarks)
                     out.append(mark.mark).append(spaced(rest(" \t" + pauseMarks)))
                     capitalizeNext = mark.mark in ".?!"
-                }
-                is LineEnd -> {
-                    trimEnd(" \t" + pauseMarks)
-                    out.append(mark.mark).append(mark.breaks).append(rest(" \t\n" + pauseMarks))
-                    capitalizeNext = true
                 }
                 is Open -> { openWith(mark.mark); out.append(rest(" \t" + pauseMarks)) }
                 is Close -> { closeWith(mark.pair); out.append(spaced(after)) }
@@ -297,14 +285,12 @@ internal object SpokenPunctuation {
     private sealed interface Mark
     /** Against the word before: , . ? ! : ; … */
     private class Attach(val mark: String) : Mark
-    /** A mark, then line breaks: "punto y aparte". */
-    private class LineEnd(val mark: String, val breaks: String) : Mark
-    /** Before the next word: ( ¿ ¡ “ */
+    /** Before the next word: ( “ */
     private class Open(val mark: String) : Mark
     private class Close(val pair: Bracket) : Mark
-    /** A bare "quote": opens, or closes the quote that is open. With toggles, two make a pair
-     * ("Anführungszeichen … Anführungszeichen"); English needs "end quote". */
-    private class ToggleQuote(val toggles: Boolean) : Mark
+    /** A bare "quote": opens, or closes the quote that is open; two never make a pair, so a
+     * closing one needs "end quote". */
+    private object ToggleQuote : Mark
     /** Between two words, no spaces: - ' @ */
     private class Join(val mark: String) : Mark
     /** On the next word: # $ */
@@ -338,18 +324,12 @@ internal object SpokenPunctuation {
         blockers: String,
         numbers: String,
         prepositions: String,
-        val prepositionsEndSentences: Boolean = false,
         familyBlockers: Map<Family, String> = emptyMap(),
         followers: String,
         familyFollowers: Map<Family, String> = emptyMap(),
-        followerPrefixes: String = "",
         starters: String,
-        starterPrefixes: String = "",
         val open: Char,
         val close: Char,
-        val capitalizesSentences: Boolean = true,
-        val adjectivesBeforeNouns: Boolean = false,
-        val possessives: Boolean = false,
     ) {
         val commands = commands.sortedByDescending { it.words.size }
         val blockers = words(blockers).toSet()
@@ -358,22 +338,12 @@ internal object SpokenPunctuation {
         val familyBlockers = familyBlockers.mapValues { words(it.value).toSet() }
         val followers = words(followers).toSet()
         val familyFollowers = familyFollowers.mapValues { words(it.value).toSet() }
-        val followerPrefixes = words(followerPrefixes)
         val starters = words(starters).toSet()
-        val starterPrefixes = words(starterPrefixes)
     }
 
     private fun table(language: String?): Table? {
         val code = language?.let { Locale.forLanguageTag(it.replace('_', '-')).language }?.takeIf(String::isNotEmpty) ?: "en"
-        return when (code) {
-            "en" -> english
-            "es" -> spanish
-            "fr" -> french
-            "de" -> german
-            "it" -> italian
-            "pt" -> portuguese
-            else -> null
-        }
+        return if (code == "en") english else null
     }
 
     private val english by lazy {
@@ -405,7 +375,7 @@ internal object SpokenPunctuation {
                 c("end quote", Close(Bracket.Quote), Family.Quote),
                 c("end quotes", Close(Bracket.Quote), Family.Quote),
                 c("unquote", Close(Bracket.Quote), Family.Quote),
-                c("quote", ToggleQuote(false), Family.Quote),
+                c("quote", ToggleQuote, Family.Quote),
                 c("open paren", Open("("), Family.Paren),
                 c("open parenthesis", Open("("), Family.Paren),
                 c("open parentheses", Open("("), Family.Paren),
@@ -425,7 +395,6 @@ internal object SpokenPunctuation {
                 "third next same whole entire upside inverted mad quick em en more fewer less",
             numbers = "zero one two three four five six seven eight nine ten",
             prepositions = "in on at to for with by from about into than like without per",
-            prepositionsEndSentences = true,
             familyBlockers = mapOf(
                 Family.Comma to "oxford serial decimal",
                 Family.Period to "trial grace time free waiting cooling notice billing school class study rest " +
@@ -471,278 +440,7 @@ internal object SpokenPunctuation {
                 "why how when where who if sure best regards just can could would will do did don't didn't not great " +
                 "cool talk speak bye goodbye kind warm",
             open = '“', close = '”',
-            possessives = true,
-        )
-    }
-
-    private val spanish by lazy {
-        Table(
-            commands = listOf(
-                c("punto y coma", Attach(";"), Family.Semicolon),
-                c("punto y aparte", LineEnd(".", "\n\n"), Family.Period),
-                c("punto y seguido", Attach("."), Family.Period),
-                c("punto final", Attach("."), Family.Period),
-                c("punto", Attach("."), Family.Period, Placement.Strict),
-                c("coma", Attach(","), Family.Comma),
-                c("dos puntos", Attach(":"), Family.Colon, Placement.StrictFollowing),
-                c("abrir signo de interrogación", Open("¿"), Family.Question),
-                c("abre signo de interrogación", Open("¿"), Family.Question),
-                c("signo de interrogación de apertura", Open("¿"), Family.Question),
-                c("abrir interrogación", Open("¿"), Family.Question),
-                c("cerrar signo de interrogación", Attach("?"), Family.Question),
-                c("cierra signo de interrogación", Attach("?"), Family.Question),
-                c("signo de interrogación de cierre", Attach("?"), Family.Question),
-                c("cerrar interrogación", Attach("?"), Family.Question),
-                c("signo de interrogación", Attach("?"), Family.Question, Placement.Strict),
-                c("abrir signo de exclamación", Open("¡"), Family.Exclamation),
-                c("abre signo de exclamación", Open("¡"), Family.Exclamation),
-                c("signo de exclamación de apertura", Open("¡"), Family.Exclamation),
-                c("abrir exclamación", Open("¡"), Family.Exclamation),
-                c("cerrar signo de exclamación", Attach("!"), Family.Exclamation),
-                c("cierra signo de exclamación", Attach("!"), Family.Exclamation),
-                c("signo de exclamación de cierre", Attach("!"), Family.Exclamation),
-                c("cerrar exclamación", Attach("!"), Family.Exclamation),
-                c("signo de exclamación", Attach("!"), Family.Exclamation, Placement.Strict),
-                c("signo de admiración", Attach("!"), Family.Exclamation, Placement.Strict),
-                c("abrir comillas", Open("“"), Family.Quote),
-                c("abre comillas", Open("“"), Family.Quote),
-                c("comillas de apertura", Open("“"), Family.Quote),
-                c("comillas iniciales", Open("“"), Family.Quote),
-                c("cerrar comillas", Close(Bracket.Quote), Family.Quote),
-                c("cierra comillas", Close(Bracket.Quote), Family.Quote),
-                c("comillas de cierre", Close(Bracket.Quote), Family.Quote),
-                c("comillas finales", Close(Bracket.Quote), Family.Quote),
-                c("comillas", ToggleQuote(true), Family.Quote),
-                c("abrir paréntesis", Open("("), Family.Paren),
-                c("abre paréntesis", Open("("), Family.Paren),
-                c("paréntesis de apertura", Open("("), Family.Paren),
-                c("cerrar paréntesis", Close(Bracket.Paren), Family.Paren),
-                c("cierra paréntesis", Close(Bracket.Paren), Family.Paren),
-                c("paréntesis de cierre", Close(Bracket.Paren), Family.Paren),
-                c("puntos suspensivos", Attach("…"), Family.Ellipsis),
-                c("guion", Join("-"), Family.Hyphen),
-                c("arroba", Join("@"), Family.At),
-                c("apóstrofo", Join("'"), Family.Apostrophe),
-                c("hashtag", Prefix("#"), Family.Hashtag),
-            ),
-            blockers = "el la los las un una unos unas este esta ese esa aquel aquella mi mis tu tus su sus nuestro " +
-                "nuestra cada otro otra ningún ninguna algún alguna del al de buen gran mismo misma primer último " +
-                "tercer cuyo cuya",
-            numbers = "cero uno dos tres cuatro cinco seis siete ocho nueve diez",
-            prepositions = "a en con por para sin entre sobre hasta desde ante tras",
-            followers = "de del es era fue son está estaba para en que",
-            familyFollowers = mapOf(
-                Family.Period to "medio muerto fuerte débil clave crítico cardinal cardinales culminante neutro álgido exacto",
-                Family.Comma to "inducido etílico profundo diabético",
-                Family.Colon to "más menos importantes clave principales",
-            ),
-            starters = "yo tú ella nosotros nosotras ellos ellas usted ustedes y pero o entonces porque también gracias " +
-                "por nos te me se que qué como cómo cuando donde hola sí si no vale bueno oye saludos espero ya pues " +
-                "luego después tengo estoy voy vamos llego quiero besos abrazos hasta adiós chao mira claro",
-            open = '“', close = '”',
-        )
-    }
-
-    private val french by lazy {
-        Table(
-            commands = listOf(
-                c("point virgule", Attach(";"), Family.Semicolon),
-                c("point d'interrogation", Attach("?"), Family.Question, Placement.Strict),
-                c("point d'exclamation", Attach("!"), Family.Exclamation, Placement.Strict),
-                c("points de suspension", Attach("…"), Family.Ellipsis),
-                c("point final", Attach("."), Family.Period),
-                c("point à la ligne", LineEnd(".", "\n"), Family.Period),
-                c("point", Attach("."), Family.Period, Placement.Strict),
-                c("virgule", Attach(","), Family.Comma),
-                c("deux points", Attach(":"), Family.Colon, Placement.StrictFollowing),
-                c("ouvrir les guillemets", Open("«"), Family.Quote),
-                c("ouvrez les guillemets", Open("«"), Family.Quote),
-                c("ouvrir guillemets", Open("«"), Family.Quote),
-                c("ouvrez guillemets", Open("«"), Family.Quote),
-                c("guillemets ouvrants", Open("«"), Family.Quote),
-                c("guillemet ouvrant", Open("«"), Family.Quote),
-                c("fermer les guillemets", Close(Bracket.Quote), Family.Quote),
-                c("fermez les guillemets", Close(Bracket.Quote), Family.Quote),
-                c("fermer guillemets", Close(Bracket.Quote), Family.Quote),
-                c("fermez guillemets", Close(Bracket.Quote), Family.Quote),
-                c("guillemets fermants", Close(Bracket.Quote), Family.Quote),
-                c("guillemet fermant", Close(Bracket.Quote), Family.Quote),
-                c("fin des guillemets", Close(Bracket.Quote), Family.Quote),
-                c("guillemets", ToggleQuote(true), Family.Quote),
-                c("ouvrir la parenthèse", Open("("), Family.Paren),
-                c("ouvrez la parenthèse", Open("("), Family.Paren),
-                c("ouvrir parenthèse", Open("("), Family.Paren),
-                c("ouvrez parenthèse", Open("("), Family.Paren),
-                c("parenthèse ouvrante", Open("("), Family.Paren),
-                c("fermer la parenthèse", Close(Bracket.Paren), Family.Paren),
-                c("fermez la parenthèse", Close(Bracket.Paren), Family.Paren),
-                c("fermer parenthèse", Close(Bracket.Paren), Family.Paren),
-                c("fermez parenthèse", Close(Bracket.Paren), Family.Paren),
-                c("parenthèse fermante", Close(Bracket.Paren), Family.Paren),
-                c("tiret", Spaced("–"), Family.Dash, Placement.Strict),
-                c("trait d'union", Join("-"), Family.Hyphen),
-                c("arobase", Join("@"), Family.At),
-                c("apostrophe", Join("'"), Family.Apostrophe),
-                c("hashtag", Prefix("#"), Family.Hashtag),
-            ),
-            blockers = "le la les l' un une des du de d' ce cet cette ces mon ma mes ton ta tes son sa ses notre nos " +
-                "votre vos leur leurs aucun aucune chaque quel quelle quelque au aux bon mauvais dernier premier seul " +
-                "petit grand gros même d'un d'une qu'un qu'une l'un",
-            numbers = "zéro un deux trois quatre cinq six sept huit neuf dix",
-            prepositions = "à en sur par pour avec sans dans entre vers chez",
-            followers = "de du des est était sont important importante essentiel principal central faible fort commun " +
-                "précis crucial culminant clé mort noir chaud flottante décimale",
-            followerPrefixes = "d'",
-            starters = "je tu il elle on nous vous ils elles ce ça et mais ou donc alors puis parce merci bonjour " +
-                "bonsoir salut coucou oui non à bisous bises si quand comment pourquoi où qui que voilà ok cordialement " +
-                "bonne bonnes d'accord désolé désolée",
-            starterPrefixes = "j' c' qu' n' s' m' t'",
-            open = '«', close = '»',
-        )
-    }
-
-    private val german by lazy {
-        Table(
-            commands = listOf(
-                c("komma", Attach(","), Family.Comma),
-                c("punkt", Attach("."), Family.Period, Placement.Strict),
-                c("fragezeichen", Attach("?"), Family.Question, Placement.Strict),
-                c("ausrufezeichen", Attach("!"), Family.Exclamation, Placement.Strict),
-                c("ausrufungszeichen", Attach("!"), Family.Exclamation, Placement.Strict),
-                c("doppelpunkt", Attach(":"), Family.Colon, Placement.Following),
-                c("semikolon", Attach(";"), Family.Semicolon),
-                c("strichpunkt", Attach(";"), Family.Semicolon),
-                c("auslassungspunkte", Attach("…"), Family.Ellipsis),
-                c("anführungszeichen unten", Open("„"), Family.Quote),
-                c("anführungszeichen auf", Open("„"), Family.Quote),
-                c("anführungszeichen oben", Close(Bracket.Quote), Family.Quote),
-                c("anführungszeichen zu", Close(Bracket.Quote), Family.Quote),
-                c("abführungszeichen", Close(Bracket.Quote), Family.Quote),
-                c("anführungszeichen", ToggleQuote(true), Family.Quote),
-                c("klammer auf", Open("("), Family.Paren),
-                c("öffnende klammer", Open("("), Family.Paren),
-                c("klammer zu", Close(Bracket.Paren), Family.Paren),
-                c("schließende klammer", Close(Bracket.Paren), Family.Paren),
-                c("gedankenstrich", Spaced("–"), Family.Dash, Placement.Strict),
-                c("bindestrich", Join("-"), Family.Hyphen),
-                c("at zeichen", Join("@"), Family.At),
-                c("klammeraffe", Join("@"), Family.At),
-                c("apostroph", Join("'"), Family.Apostrophe),
-                c("hashtag", Prefix("#"), Family.Hashtag),
-            ),
-            blockers = "der die das den dem des ein eine einen einem einer eines kein keine keinen keinem keiner mein " +
-                "meine meinen meinem meiner dein deine deinen sein seine seinen seinem ihr ihre ihren ihrem unser " +
-                "unsere unseren euer eure dieser diese dieses diesen diesem jeder jede jedes jeden welcher welche " +
-                "welches zum zur im am um beim vom ins ans springende",
-            numbers = "null eins zwei drei vier fünf sechs sieben acht neun zehn",
-            prepositions = "mit ohne für auf an in nach vor bei von zu aus über unter gegen durch als",
-            prepositionsEndSentences = true,
-            followers = "ist war sind waren hat hatte für der des von auf eins zwei drei vier fünf sechs sieben acht " +
-                "neun zehn elf zwölf uhr",
-            starters = "ich du er sie es wir ihr und aber oder dann also denn weil danke bitte hallo hi hey ja nein bis " +
-                "viele liebe lieber gruß grüße wie was wann wo warum wer wenn dass ok okay mal sorry tschüss schöne " +
-                "schönen mach machs",
-            open = '„', close = '“',
-            capitalizesSentences = false,
-            adjectivesBeforeNouns = true,
-        )
-    }
-
-    private val italian by lazy {
-        Table(
-            commands = listOf(
-                c("punto e virgola", Attach(";"), Family.Semicolon),
-                c("punto interrogativo", Attach("?"), Family.Question, Placement.Strict),
-                c("punto di domanda", Attach("?"), Family.Question, Placement.Strict),
-                c("punto esclamativo", Attach("!"), Family.Exclamation, Placement.Strict),
-                c("punto fermo", Attach("."), Family.Period),
-                c("punto a capo", LineEnd(".", "\n"), Family.Period),
-                c("punto", Attach("."), Family.Period, Placement.Strict),
-                c("virgola", Attach(","), Family.Comma),
-                c("due punti", Attach(":"), Family.Colon, Placement.StrictFollowing),
-                c("puntini di sospensione", Attach("…"), Family.Ellipsis),
-                c("tre puntini", Attach("…"), Family.Ellipsis),
-                c("apri virgolette", Open("“"), Family.Quote),
-                c("aperte virgolette", Open("“"), Family.Quote),
-                c("aperta virgolette", Open("“"), Family.Quote),
-                c("virgolette aperte", Open("“"), Family.Quote),
-                c("chiudi virgolette", Close(Bracket.Quote), Family.Quote),
-                c("chiuse virgolette", Close(Bracket.Quote), Family.Quote),
-                c("chiusa virgolette", Close(Bracket.Quote), Family.Quote),
-                c("virgolette chiuse", Close(Bracket.Quote), Family.Quote),
-                c("virgolette", ToggleQuote(true), Family.Quote),
-                c("apri parentesi", Open("("), Family.Paren),
-                c("aperta parentesi", Open("("), Family.Paren),
-                c("parentesi aperta", Open("("), Family.Paren),
-                c("chiudi parentesi", Close(Bracket.Paren), Family.Paren),
-                c("chiusa parentesi", Close(Bracket.Paren), Family.Paren),
-                c("parentesi chiusa", Close(Bracket.Paren), Family.Paren),
-                c("lineetta", Spaced("–"), Family.Dash, Placement.Strict),
-                c("trattino", Join("-"), Family.Hyphen),
-                c("chiocciola", Join("@"), Family.At),
-                c("apostrofo", Join("'"), Family.Apostrophe),
-                c("hashtag", Prefix("#"), Family.Hashtag),
-                c("cancelletto", Prefix("#"), Family.Hashtag),
-            ),
-            blockers = "il lo la i gli le l' un uno una un' questo questa quel quello quella quei quegli quelle mio mia " +
-                "miei mie tuo tua suo sua nostro nostra vostro vostra ogni nessun nessuno nessuna del della dello dei " +
-                "degli delle al alla allo ai agli alle nel nella nello nei sul sulla di buon bel gran grande ultimo " +
-                "primo stesso",
-            numbers = "zero uno due tre quattro cinque sei sette otto nove dieci",
-            prepositions = "a da in con su per tra fra",
-            followers = "di del della dello dei era sono importante fondamentale chiave centrale debole forte cruciale " +
-                "cardine morto vendita cui in",
-            followerPrefixes = "d'",
-            starters = "io tu lui lei noi voi loro e ma o poi quindi perché allora grazie ciao sì si no che come quando " +
-                "dove chi ci ti mi vi ok va a buongiorno buonasera salve ecco dai baci ho hai ha abbiamo vado arrivo " +
-                "vengo sono",
-            starterPrefixes = "c' l'",
-            open = '“', close = '”',
-        )
-    }
-
-    private val portuguese by lazy {
-        Table(
-            commands = listOf(
-                c("ponto e vírgula", Attach(";"), Family.Semicolon),
-                c("ponto de interrogação", Attach("?"), Family.Question, Placement.Strict),
-                c("ponto de exclamação", Attach("!"), Family.Exclamation, Placement.Strict),
-                c("ponto final", Attach("."), Family.Period),
-                c("ponto parágrafo", LineEnd(".", "\n\n"), Family.Period),
-                c("ponto", Attach("."), Family.Period, Placement.Strict),
-                c("vírgula", Attach(","), Family.Comma),
-                c("dois pontos", Attach(":"), Family.Colon, Placement.StrictFollowing),
-                c("reticências", Attach("…"), Family.Ellipsis),
-                c("abre aspas", Open("“"), Family.Quote),
-                c("abrir aspas", Open("“"), Family.Quote),
-                c("fecha aspas", Close(Bracket.Quote), Family.Quote),
-                c("fechar aspas", Close(Bracket.Quote), Family.Quote),
-                c("aspas", ToggleQuote(true), Family.Quote),
-                c("abre parênteses", Open("("), Family.Paren),
-                c("abre parêntese", Open("("), Family.Paren),
-                c("abrir parênteses", Open("("), Family.Paren),
-                c("abrir parêntese", Open("("), Family.Paren),
-                c("fecha parênteses", Close(Bracket.Paren), Family.Paren),
-                c("fecha parêntese", Close(Bracket.Paren), Family.Paren),
-                c("fechar parênteses", Close(Bracket.Paren), Family.Paren),
-                c("fechar parêntese", Close(Bracket.Paren), Family.Paren),
-                c("travessão", Spaced("–"), Family.Dash, Placement.Strict),
-                c("hífen", Join("-"), Family.Hyphen),
-                c("arroba", Join("@"), Family.At),
-                c("apóstrofo", Join("'"), Family.Apostrophe),
-                c("hashtag", Prefix("#"), Family.Hashtag),
-            ),
-            blockers = "o a os as um uma uns umas este esta estes estas esse essa esses essas aquele aquela meu minha " +
-                "meus minhas teu tua seu sua seus suas nosso nossa cada nenhum nenhuma algum alguma outro outra do da " +
-                "dos das no na nas ao aos pelo pela pelos pelas de bom grande mesmo último primeiro dois duas",
-            numbers = "zero um uma dois duas três quatro cinco seis sete oito nove dez",
-            prepositions = "em com por para sem entre sobre",
-            followers = "de do da dos das era são foi principal importante chave central fraco forte crucial em morto " +
-                "alto baixo",
-            starters = "eu tu você ele ela nós eles elas vocês e mas ou então porque também obrigado obrigada olá oi " +
-                "sim não que como quando onde quem até te me se beijos beijo abraço abraços tudo estou vou vamos chego " +
-                "tenho",
-            open = '“', close = '”',
         )
     }
 }
+

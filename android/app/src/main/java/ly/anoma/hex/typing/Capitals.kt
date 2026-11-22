@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 /** How often the books write each word with a capital (`<lang>.capitals`, beside the model): one
  * `word<TAB>percent` line per lowercase word, sorted by its UTF-8 bytes, memory-mapped and searched
  * in place. It lists the model's words written with a capital at least half the time, and names
- * outside the model (`benchmark/typing/build-capitals.py`); German's is iOS's `de.capitals`. */
+ * outside the model (`benchmark/typing/build-capitals.py`). */
 internal class Capitals(private val data: ByteBuffer) {
     /** The capitalised share (50–100) of `word`, lowercase, or -1 when the list doesn't have it. */
     fun percent(word: String): Int {

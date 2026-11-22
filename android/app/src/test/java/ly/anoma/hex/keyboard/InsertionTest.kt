@@ -3,7 +3,6 @@ package ly.anoma.hex.keyboard
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import ly.anoma.hex.speech.DictationLanguage
-import ly.anoma.hex.speech.FrenchSpacing
 import ly.anoma.hex.speech.Spoken
 import ly.anoma.hex.speech.SpokenCleanup
 import ly.anoma.hex.speech.SpokenPunctuation
@@ -31,8 +30,6 @@ class InsertionTest {
         assertEquals("see you soon", render("Um, see you soon.", Style.Casual))
         assertEquals("- Buy milk\n- Call Sam", render("bullet buy milk next bullet call Sam", Style.Notes))
         assertEquals("Um, Tuesday, sorry, Thursday.", render("Um, Tuesday, sorry, Thursday.", Style.Verbatim))
-        assertEquals("Das ist eh egal.", SpokenText.format("Äh, das ist eh egal.",
-            SpeechOptions(Style.Polished, DictationLanguage.German, false, false)))
     }
     @Test fun removesOnlyAnchoredRepairsAndPreservesNegation() {
         assertEquals("Meet at 4pm?", SpokenCleanup.clean("Meet at 3pm, actually 4pm?", "en"))
@@ -40,12 +37,7 @@ class InsertionTest {
         assertEquals("I want the red one, sorry, eventually.", SpokenCleanup.clean("I want the red one, sorry, eventually.", "en"))
         assertEquals("I sent the invoice, sorry I am late.", SpokenCleanup.clean("I sent the invoice, sorry I am late.", "en"))
         assertEquals("It isn’t blue, I mean, it is green.", SpokenCleanup.clean("It isn’t blue, I mean, it is green.", "en"))
-        assertEquals("Uno\ndos", SpokenCleanup.clean("Uno\ndos", "es"))
         assertEquals("eBay works.", SpokenCleanup.clean("Um, eBay works.", "en"))
-        assertEquals("Te digo que no puedo ir.", SpokenCleanup.clean("Te digo que no puedo ir.", "es"))
-        assertEquals("¿El miércoles?", SpokenCleanup.clean("¿El martes, perdón, el miércoles?", "es"))
-        assertEquals("Am Mittwoch.", SpokenCleanup.clean("Am Dienstag, ich meine, Mittwoch.", "de"))
-        assertEquals("Det er torsdag.", SpokenCleanup.clean("Det er tirsdag, nei, torsdag.", "no"))
     }
 
     // iOS TranscriptCleanupTests: the styles, End with a period and Lowercase.
@@ -61,12 +53,6 @@ class InsertionTest {
         assertEquals("mail john@gmail.com", styled("Mail john@gmail.com", Style.Casual))
         assertEquals("- john@gmail.com\n- Call Ravi", styled("bullet john@gmail.com bullet call Ravi", Style.Notes))
         assertEquals("Hello. World! Ok? Yes.", styled("Hello. world! ok? yes"))
-    }
-    @Test fun stylesTrimSpanishAndGermanHesitations() {
-        assertEquals("Creo que sí, pero no estoy seguro.", styled("Mmm, creo que sí, eh, pero no estoy seguro.", language = "es-ES"))
-        assertEquals("¿Qué tal? Padre e hijo.", styled("Eh, ¿qué tal? Padre e hijo.", language = "es-ES"))
-        assertEquals("Das ist eh egal.", styled("Äh, das ist eh egal.", language = "de-DE"))
-        assertEquals("Eh, nos vemos.", styled("Eh, nos vemos.", Style.Verbatim, "es-ES"))
     }
     @Test fun stylesDifferOnOrdinaryShortDictation() {
         fun all(text: String) = Style.entries.map { styled(text, it) }
@@ -86,8 +72,7 @@ class InsertionTest {
         assertEquals("Shopping list:", styled("Shopping list:"))
         assertEquals("好的，明天见。", styled("好的，明天见。", language = "zh-CN"))
         assertEquals("好的，明天见。", styled("好的，明天见", language = "zh-CN"))
-        assertEquals("I ragazzi.", styled("i ragazzi", language = "it-IT"))
-        assertEquals("Dimmi i nomi.", styled("dimmi i nomi", language = "it-IT"))
+        assertEquals("Really? Yes.", SpokenText.format("Really ? Yes", SpeechOptions(Style.Polished, DictationLanguage.English, false, false)))
     }
     @Test fun casualTexts() {
         assertEquals("yeah i'll text John about the iPhone order tomorrow",
@@ -98,7 +83,6 @@ class InsertionTest {
         assertEquals("iPhone is charged", styled("iPhone is charged.", Style.Casual))
         assertEquals("one. two. three. four.", styled("One. Two. Three. Four.", Style.Casual))
         assertEquals("hi.\nsee you.", styled("Hi.\nSee you.", Style.Casual))
-        assertEquals("sí, claro", styled("Sí, claro.", Style.Casual, "es-ES"))
         assertEquals("好的，明天见", styled("好的，明天见。", Style.Casual, "zh-CN"))
     }
     @Test fun notesListSeveralItemsConcisely() {
@@ -153,7 +137,6 @@ class InsertionTest {
         assertEquals("yeah, text john about the iphone order.", pipeline(heard, Style.Polished, lowercase = true))
         assertEquals("yeah text john about the iphone order", pipeline(heard, Style.Casual, lowercase = true))
         assertEquals("yeah, text john about the iphone order.", pipeline(heard, Style.Verbatim, lowercase = true))
-        assertEquals("der fluss", pipeline("Der Fluss", Style.Casual, DictationLanguage.German, lowercase = true))
     }
     @Test fun polishedWritesOutInformalContractions() {
         assertEquals("I'm going to call you later. I want to finish this first.",
@@ -166,7 +149,6 @@ class InsertionTest {
             styled("She sang “Wanna Be Startin' Somethin'” all night.", language = "en-US"))
         assertEquals("We played Gonna Fly Now on repeat.", styled("We played Gonna Fly Now on repeat.", language = "en-US"))
         assertEquals("The gonnabe kinds and the wannabes.", styled("The gonnabe kinds and the wannabes.", language = "en-US"))
-        assertEquals("Voy a gonna mañana.", styled("Voy a gonna mañana.", language = "es-ES"))
         val heard = "I'm gonna be late, wanna start without me?"
         assertEquals("i'm gonna be late, wanna start without me?", styled(heard, Style.Casual, "en-US"))
         assertEquals(heard, styled(heard, Style.Verbatim, "en-US"))
@@ -250,7 +232,6 @@ class InsertionTest {
             "john at the rate gmail", "Send it at the rate", "Wait at the gate dot com", "Send it to priya@yahoo.com",
             "My email is john at gmail.com.", "Prices Are growing at the rate of5% a year",
             "Rates went up at the ratepayers' meeting.")) assertEquals(spoken, SpokenCleanup.symbols(spoken, "en-IN"))
-        assertEquals("john at the rate gmail dot com", SpokenCleanup.symbols("john at the rate gmail dot com", "es"))
     }
     @Test fun spokenCountsBecomeDigits() {
         for ((heard, written) in listOf("Test one, 2, 3." to "Test 1, 2, 3.", "Test one, two, three." to "Test 1, 2, 3.",
@@ -268,7 +249,6 @@ class InsertionTest {
             "Zero, one, two, three.", "Twenty one two three.", "One. Two. Three.", "Test. 1. 2. 3.", "Room 123 is free.",
             "Test 123 passed.", "This is a test. 123 people came.", "Test 132.", "Counting 1234", "Call 1-2-3 now.",
         )) assertEquals(heard, SpokenCleanup.counts(heard, "en-US"))
-        assertEquals("Prueba uno, dos, tres.", SpokenCleanup.counts("Prueba uno, dos, tres.", "es"))
     }
     @Test fun symbolsAndCountsRunInTheStylesButNotVerbatim() {
         assertEquals("Mail it to john@gmail.com.", pipeline("mail it to John at the rate Gmail dot com", Style.Polished))
@@ -301,8 +281,6 @@ class InsertionTest {
         assertEquals("1. Going to call Sam.\n2. Want to book the hotel.",
             spoken("First, gonna call Sam. Second, wanna book the hotel.", Style.Polished))
         assertEquals("Todo:\n- Got to pack.\n- Let me check the car.", spoken("Todo bullet gotta pack bullet lemme check the car", Style.Polished))
-        assertEquals("Mi lista de compras.\n1. Huevos.\n2. Leche.\n3. Pan.",
-            spoken("Mi lista de compras. Primero, huevos, segundo, leche, tercero, pan.", Style.Polished, spoken = DictationLanguage.Spanish))
         assertEquals("The first time I saw it, I loved it.", spoken("The first time I saw it, I loved it.", Style.Polished))
     }
     @Test fun spokenPunctuationInsideTheStyles() {
@@ -317,9 +295,7 @@ class InsertionTest {
         assertEquals("Hi Sarah,\nThanks for the update.", spoken("Hi Sarah comma new line thanks for the update period", Style.Polished))
         assertEquals("Groceries:\n- Eggs.\n- Milk.", spoken("Groceries, dash, eggs, dash, milk.", Style.Polished))
         assertEquals("wow!", spoken("Wow exclamation point", Style.Polished, lowercase = true))
-        assertEquals("Llego mañana. Nos vemos.", spoken("Llego mañana, punto nos vemos", Style.Polished, spoken = DictationLanguage.Spanish))
         assertEquals("Hi Sarah, how are you?", SpokenPunctuation.format("Hi Sarah comma how are you question mark", "en"))
-        assertEquals("Wir sehen uns morgen, okay?", spoken("Wir sehen uns morgen Komma okay Fragezeichen", Style.Polished, spoken = DictationLanguage.German))
         for (prose in listOf("A period of time passed.", "The comma is wrong.", "Use the Oxford comma.", "He has a question mark tattoo.",
             "Two comma five.", "Colon cancer is treatable.")) assertEquals(prose, SpokenPunctuation.format(prose, "en"))
     }
@@ -346,12 +322,8 @@ class InsertionTest {
         assertEquals(" McDonald's is open.", insert("McDonald's is open.", "and"))
         assertEquals(" Sarah said so.", insert("Sarah said so.", "and"))
         assertEquals(" iPhone works.", insert("iPhone works.", "my"))
-        // German keeps the case; the built-in word lists know no names.
-        assertEquals("Das Haus", SpokenText.continuing("Das Haus", "und", "de-DE") { true })
         assertEquals("the plan", SpokenText.continuing("The plan", "and", "en"))
         assertEquals("Sarah said", SpokenText.continuing("Sarah said", "and", "en"))
-        assertEquals("que sí", SpokenText.continuing("Que sí", "Creo", "es"))
-        assertEquals("Madrid es", SpokenText.continuing("Madrid es", "en", "es"))
     }
 
     // iOS TranscriptCleanupTests and CustomVocabularyTests: vocabulary before cleanup and after the style.
@@ -366,31 +338,6 @@ class InsertionTest {
         assertEquals("iPhone is charged.", spelled("iphone is charged", Style.Polished))
         assertEquals("Ask about OpenCode and WeChat.", spelled("ask about open code and we chat", Style.Polished, terms = listOf("OpenCode", "WeChat")))
         assertEquals("Ask about open code.", spelled("ask about open code", Style.Polished, terms = emptyList()))
-    }
-
-    // iOS FrenchSpacingTests (French isn't a dictation language on Android yet; this is ready for it).
-    @Test fun frenchSpacing() {
-        val thin = "\u202F"; val nbsp = "\u00A0"
-        assertEquals("Bonjour, comment ça va${thin}? Tu viens ce soir${thin}?",
-            FrenchSpacing.apply(SpokenText.style("Bonjour, comment ça va ? Tu viens ce soir ?", Style.Polished, "fr-FR"), "fr-FR"))
-        assertEquals("Il y a trois choses${nbsp}: le pain${thin}; le lait et «${nbsp}les œufs${nbsp}»${thin}! C'est tout.",
-            FrenchSpacing.apply(SpokenText.style("il y a trois choses: le pain; le lait et «les œufs» ! c'est tout", Style.Polished, "fr-FR"), "fr-FR"))
-        assertEquals("tu viens ce soir${thin}? génial${thin}!",
-            FrenchSpacing.apply(SpokenText.style("Tu viens ce soir ? Génial !", Style.Casual, "fr-FR"), "fr-FR"))
-        assertEquals("ça va? Oui! Voici${nbsp}: «${nbsp}tout${nbsp}»", FrenchSpacing.apply("ça va ? Oui ! Voici : «tout»", "fr-CA"))
-        assertEquals("ça va${thin}? Voici${nbsp}: «${thin}tout${thin}»", FrenchSpacing.apply("ça va ? Voici : « tout »", "fr-CH"))
-        assertEquals(FrenchSpacing.Convention.France, FrenchSpacing.convention("fr-BE"))
-        assertEquals(FrenchSpacing.Convention.France, FrenchSpacing.convention("fr"))
-        assertEquals(null, FrenchSpacing.convention("en-CA"))
-        assertEquals(null, FrenchSpacing.convention(null))
-        val once = FrenchSpacing.apply("ça va  ?\nOui${nbsp}! Quoi ?!", "fr-FR")
-        assertEquals("ça va${thin}?\nOui${thin}! Quoi${thin}?!", once)
-        assertEquals(once, FrenchSpacing.apply(once, "fr-FR"))
-        for (text in listOf("Rendez-vous à 10:30 ou 18:45", "Super :) et ;-) puis :D et :(", "Va sur https://exemple.fr/page?q=1",
-            "Écris moi@exemple.fr! ou www.exemple.fr?", "Tape \u0060a ? b : c\u0060 puis \u0060x::y\u0060", "? au début\n: en début de ligne"))
-            assertEquals(text, FrenchSpacing.apply(text, "fr-FR"))
-        assertEquals("Il m'a dit «${nbsp}Tu viens${thin}?${nbsp}»", FrenchSpacing.apply("Il m'a dit «Tu viens?»", "fr-FR"))
-        assertEquals("Really? Yes.", SpokenText.format("Really ? Yes", SpeechOptions(Style.Polished, DictationLanguage.English, false, false)))
     }
 
     @Test fun shiftChordsLockAndAutoCapitals() {
@@ -462,28 +409,9 @@ class InsertionTest {
             assertEquals(prose, SpokenCleanup.clean(prose, "en"))
     }
     @Test fun automaticDictationFollowsTheKeyboardLayout() {
-        assertEquals(DictationLanguage.Spanish, DictationLanguage.automatic(Spoken.Spanish, listOf("en")))
-        assertEquals(DictationLanguage.Norwegian, DictationLanguage.automatic(Spoken.Norwegian, listOf("en")))
-        assertEquals(DictationLanguage.German, DictationLanguage.automatic(null, listOf("ja", "de", "en")))
-        assertEquals(DictationLanguage.Norwegian, DictationLanguage.automatic(null, listOf("nb")))
+        assertEquals(DictationLanguage.Swedish, DictationLanguage.automatic(Spoken.Swedish, listOf("en")))
+        assertEquals(DictationLanguage.Swedish, DictationLanguage.automatic(null, listOf("ja", "sv", "en")))
         assertEquals(DictationLanguage.English, DictationLanguage.automatic(null, listOf("ja")))
-    }
-    @Test fun frenchItalianAndDutchAreDictationLanguages() {
-        assertEquals(DictationLanguage.French, DictationLanguage.automatic(Spoken.French, listOf("en")))
-        assertEquals(DictationLanguage.Italian, DictationLanguage.automatic(Spoken.Italian, listOf("en")))
-        assertEquals(DictationLanguage.Dutch, DictationLanguage.automatic(null, listOf("nl", "en")))
-        assertEquals(DictationLanguage.French, DictationLanguage.automatic(null, listOf("fr")))
-        assertEquals(Spoken.French, DictationLanguage.French.layout)
-        assertEquals(null, DictationLanguage.Dutch.layout)
-        fun polished(text: String, language: DictationLanguage) =
-            SpokenText.format(text, SpeechOptions(Style.Polished, language, false, false, spokenPunctuation = true))
-        assertEquals("Bonjour, comment ça va\u202F?", polished("bonjour virgule comment ça va point d'interrogation", DictationLanguage.French))
-        assertEquals("Ciao, come stai?", polished("ciao virgola come stai punto interrogativo", DictationLanguage.Italian))
-        assertEquals("Heel erg bedankt voor je hulp.", polished("heel erg bedankt voor je hulp", DictationLanguage.Dutch))
-        assertEquals("la réunion", SpokenText.continuing("La réunion", "et", "fr"))
-        assertEquals("Paris est", SpokenText.continuing("Paris est", "et", "fr"))
-        assertEquals("il treno", SpokenText.continuing("Il treno", "e", "it"))
-        assertEquals("de trein", SpokenText.continuing("De trein", "en", "nl"))
     }
     // Batch 3 (Rollover, holds, field kinds). These belong in a KeyboardTouchTest once new test files are agreed.
     @Test fun overlappingKeysTypeInTheOrderTheyWentDown() {

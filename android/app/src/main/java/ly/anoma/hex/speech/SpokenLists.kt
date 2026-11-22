@@ -3,14 +3,14 @@ package ly.anoma.hex.speech
 import java.text.Normalizer
 import java.util.Locale
 
-/** Dictated lists and line breaks as lines, in English and Spanish; other languages stay as said.
+/** Dictated lists and line breaks as lines, in English; other languages stay as said.
  * Mirrors iOS SpokenLists: runs inside a style, after its fillers and before its punctuation.
- * - "new line", "new paragraph" ("nueva línea", "nuevo párrafo", "salto de línea") become line
- *   breaks, never at the start, after "a", "the", "una", … or before "of", "is", "de", … .
+ * - "new line", "new paragraph" become line breaks, never at the start, after "a", "the", … or
+ *   before "of", "is", … .
  * - "first … second …", "number one … number two …", "one, … two, …" become "1. …" lines when
  *   the markers count up from one, every marker starts a clause and no item is empty;
  *   "finally" ends a list of two or more.
- * - "bullet", "next item", "dash" ("viñeta", "guion") said twice or more become "- …" lines.
+ * - "bullet", "next item", "dash" said twice or more become "- …" lines.
  * - Text before the list is its own line, given a colon unless it ends a sentence; the last item
  *   ends at its first sentence and what follows is its own line. */
 internal object SpokenLists {
@@ -22,7 +22,7 @@ internal object SpokenLists {
     private class Token(val text: String, val isWord: Boolean, val folded: String)
 
     private val marks = Regex("\\p{M}+")
-    /** Lowercased, accents and "ñ" folded: "Viñeta" reads "vineta". */
+    /** Lowercased, accents folded. */
     private fun fold(s: String) = marks.replace(Normalizer.normalize(s.lowercase(Locale.ROOT), Normalizer.Form.NFD), "")
     private fun letterOrNumber(cp: Int) = Character.isLetter(cp) || Character.getType(cp).toByte().let {
         it == Character.DECIMAL_DIGIT_NUMBER || it == Character.LETTER_NUMBER || it == Character.OTHER_NUMBER
@@ -155,10 +155,6 @@ internal object SpokenLists {
             if (needsMark && !after.startsWith(",") && !after.startsWith(":")) continue
             return Marker(ORDINAL, 0, i, end)
         }
-        for ((phrase, value) in t.ordinalPhrases) {
-            val end = w.phrase(phrase, i) ?: continue
-            if (w.startsClause(i)) return Marker(ORDINAL, value, i, end)
-        }
         if (word in t.keywords && w.spacesOnly(i + 1) && w.startsClause(i)) {
             w.number(i + 2)?.let { return Marker("keyword $word", it, i, i + 3) }
         }
@@ -267,7 +263,7 @@ internal object SpokenLists {
         return output.toString()
     }
 
-    private val abbreviations = "mr mrs ms dr st jr sr prof vs etc inc ltd approx sra dra ud uds".split(' ').toSet()
+    private val abbreviations = "mr mrs ms dr st jr sr prof vs etc inc ltd approx".split(' ').toSet()
 
     /** ".", "!", "?" or "…" then a space, never after "Dr" or an initial. */
     private fun endsSentence(separator: String, word: String): Boolean {
@@ -289,7 +285,7 @@ internal object SpokenLists {
         return capitalized(item)
     }
 
-    /** Without the connectors ("and", "y luego") a next item's marker leaves at the end. */
+    /** Without the connectors ("and", "and then") a next item's marker leaves at the end. */
     private fun stripConnectors(text: String, table: Table): String {
         var t = text
         while (true) {
@@ -325,7 +321,6 @@ internal object SpokenLists {
         val alternatives: Set<String>,
         val ordinals: Map<String, Int>,
         val digitOrdinalSuffixes: List<String>,
-        val ordinalPhrases: List<Pair<List<String>, Int>>,
         /** Words right after an ordinal that keep it prose: "first time", "second guess". */
         val ordinalFollowers: Set<String>,
         val ofAll: List<String>,
@@ -343,11 +338,7 @@ internal object SpokenLists {
 
         companion object {
             fun forLanguage(language: String?): Table? =
-                when (language?.let { Locale.forLanguageTag(it.replace('_', '-')).language }?.ifEmpty { null } ?: "en") {
-                    "en" -> english
-                    "es" -> spanish
-                    else -> null
-                }
+                english.takeIf { (language?.let { Locale.forLanguageTag(it.replace('_', '-')).language }?.ifEmpty { null } ?: "en") == "en" }
 
             val english = Table(
                 breaks = phrases("new paragraph" to "\n\n", "new line" to "\n", "line break" to "\n"),
@@ -361,7 +352,6 @@ internal object SpokenLists {
                     "fourth" to 4, "fourthly" to 4, "fifth" to 5, "fifthly" to 5, "sixth" to 6, "seventh" to 7, "eighth" to 8,
                     "ninth" to 9, "tenth" to 10),
                 digitOrdinalSuffixes = listOf("st", "nd", "rd", "th"),
-                ordinalPhrases = emptyList(),
                 ordinalFollowers = words("time times place thing things one ones day days week weeks month months year " +
                     "years half class person people hand floor grade round prize guess guessed guessing nature rate aid " +
                     "base cousin cousins date name impression choice language lady world edition gear love sight glance " +
@@ -379,33 +369,6 @@ internal object SpokenLists {
                     "dash" to true),
                 bulletFollowers = words("points proof proofs train trains wound wounds hole holes journal journals casing " +
                     "casings shell shells ant ants is was hit hits went flew of in list lists"),
-            )
-
-            val spanish = Table(
-                breaks = phrases("nuevo parrafo" to "\n\n", "nueva linea" to "\n", "salto de linea" to "\n"),
-                determiners = words("un una el la los las este esta estos estas ese esa eso mi mis tu tus su sus nuestra " +
-                    "nuestro otra otro cada de del con en para por al a"),
-                breakFollowers = words("de del es fue que para y"),
-                connectors = words("y e luego despues tambien"),
-                alternatives = words("o u"),
-                ordinals = mapOf("primero" to 1, "primera" to 1, "primeramente" to 1, "segundo" to 2, "segunda" to 2,
-                    "tercero" to 3, "tercera" to 3, "cuarto" to 4, "cuarta" to 4, "quinto" to 5, "quinta" to 5, "sexto" to 6,
-                    "sexta" to 6, "septimo" to 7, "septima" to 7, "octavo" to 8, "octava" to 8, "noveno" to 9, "novena" to 9,
-                    "decimo" to 10, "decima" to 10),
-                digitOrdinalSuffixes = listOf("º", "ª"),
-                ordinalPhrases = phrases("en primer lugar" to 1, "en segundo lugar" to 2, "en tercer lugar" to 3,
-                    "en cuarto lugar" to 4, "en quinto lugar" to 5),
-                ordinalFollowers = words("vez veces lugar dia dias plato piso mano grado premio parte nombre ano anos mes " +
-                    "semana momento paso pasos hijo hija ministro ministra actor plano mundo tiempo ciclo curso nivel " +
-                    "puesto de del en que es fue y o a con amor intento capitulo temporada clase fila"),
-                ofAll = listOf("de", "todo"),
-                finals = phrases("en ultimo lugar" to false, "por ultimo" to false, "finalmente" to false),
-                cardinals = mapOf("uno" to 1, "una" to 1, "dos" to 2, "tres" to 3, "cuatro" to 4, "cinco" to 5, "seis" to 6,
-                    "siete" to 7, "ocho" to 8, "nueve" to 9, "diez" to 10),
-                keywords = words("numero paso"),
-                bullets = phrases("siguiente vineta" to false, "siguiente elemento" to false, "vineta" to false,
-                    "guion" to true),
-                bulletFollowers = words("de del es fue que"),
             )
         }
     }

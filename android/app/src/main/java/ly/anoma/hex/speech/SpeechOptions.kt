@@ -7,32 +7,21 @@ internal enum class Style { Polished, Casual, Notes, Verbatim }
 /** A keyboard layout's language: its keys, accents and typing model. Dictation languages are
  * [DictationLanguage]; a language can be dictated without a layout of its own. */
 internal enum class Spoken(val code: String, val label: String) {
-    English("en", "English"), Spanish("es", "Español"), German("de", "Deutsch"), Norwegian("no", "Norsk"),
-    French("fr", "Français"), Italian("it", "Italiano"), Swedish("sv", "Svenska");
+    English("en", "English"), Swedish("sv", "Svenska");
 
-    // Whisper calls Bokmål "no"; the keyboard and its model use BCP 47 "nb".
-    val layoutCode get() = if (this == Norwegian) "nb" else code
+    val layoutCode get() = code
     companion object {
-        fun matching(code: String?): Spoken? = when (code) {
-            "no", "nb", "nn" -> Norwegian
-            else -> entries.firstOrNull { it.code == code }
-        }
+        fun matching(code: String?): Spoken? = entries.firstOrNull { it.code == code }
     }
 }
 
 /** What Whisper is asked to transcribe ([code], Whisper's name for it) and the layout the
  * keyboard follows while it is the dictation language, when there is one. */
 internal enum class DictationLanguage(val code: String, val label: String, val layout: Spoken?) {
-    English("en", "English", Spoken.English), Spanish("es", "Español", Spoken.Spanish),
-    German("de", "Deutsch", Spoken.German), Norwegian("no", "Norsk", Spoken.Norwegian),
-    French("fr", "Français", Spoken.French), Italian("it", "Italiano", Spoken.Italian), Swedish("sv", "Svenska", Spoken.Swedish),
-    Dutch("nl", "Nederlands", null);
+    English("en", "English", Spoken.English), Swedish("sv", "Svenska", Spoken.Swedish);
 
     companion object {
-        fun matching(code: String?): DictationLanguage? = when (code) {
-            "no", "nb", "nn" -> Norwegian
-            else -> entries.firstOrNull { it.code == code }
-        }
+        fun matching(code: String?): DictationLanguage? = entries.firstOrNull { it.code == code }
         /** Automatic: the keyboard's layout when one is chosen there, as iPhone dictation follows the
          * keyboard's language, else the first of the phone's languages Hex dictates, else English. */
         fun automatic(keyboard: Spoken?, system: List<String>): DictationLanguage =
@@ -74,7 +63,7 @@ internal class SpeechPreferences(context: Context) {
     var endWithPeriod: Boolean
         get() = prefs.getBoolean("endWithPeriod", true)
         set(value) { prefs.edit().putBoolean("endWithPeriod", value).apply() }
-    // Say "first, second" or "bullet" for a list (English and Spanish).
+    // Say "first, second" or "bullet" for a list (English).
     var formatLists: Boolean
         get() = prefs.getBoolean("formatLists", true)
         set(value) { prefs.edit().putBoolean("formatLists", value).apply() }
@@ -90,6 +79,6 @@ internal class SpeechPreferences(context: Context) {
         get() = prefs.getString("vocabularyTerms", null)?.split('\n').orEmpty().filter(String::isNotEmpty)
         set(value) { prefs.edit().putString("vocabularyTerms", VocabularySpelling.sanitize(value).joinToString("\n")).apply() }
     fun options(nextEnglish: Boolean?) = SpeechOptions(style, spoken, clean,
-        translation && spoken == DictationLanguage.Spanish && (nextEnglish ?: true), lowercase, endWithPeriod, formatLists, spokenPunctuation,
+        translation && spoken != DictationLanguage.English && (nextEnglish ?: true), lowercase, endWithPeriod, formatLists, spokenPunctuation,
         if (customVocabulary) vocabularyTerms else emptyList())
 }

@@ -32,9 +32,7 @@ internal class SpatialDecoder(val model: TypingModel) {
     data class Decision(val replace: String?, val readings: List<Reading>)
     // Google Books English has richer word pairs; these are the shared iOS R1 weights.
     private val lmWeight = if (model.language == "en") 1.5 else 1.25
-    // Spanish's many one- and two-letter words ("a", "es", "va") make a letter read as a space too
-    // cheap a split ("vaxes" -> "va es"): there, only a tap below the letters is one.
-    private val spaceTapCost = if (model.language == "es") Double.POSITIVE_INFINITY else 5.0
+    private val spaceTapCost = 5.0
     fun score(grid: KeyGrid, x: Double, y: Double): Tap {
         val costs = DoubleArray(model.alphabet + 1) { Double.POSITIVE_INFINITY }
         val sy = grid.verticalSpread
@@ -376,10 +374,9 @@ internal class SpatialDecoder(val model: TypingModel) {
                 .distinctBy { it.text.lowercase() }.toMutableList()
             // Nothing above read a spelling that is no word at all: a missed space may still explain it,
             // with a slip in the second word or three or more words run together (iOS #2244). Never a
-            // known spelling or a likelier reading that only missed the margin; not German, whose model
-            // is lowercase and whose nouns take their capital in the one-word path.
+            // known spelling or a likelier reading that only missed the margin.
             if (replace == null && !knownLiteral && typed.length >= 5) {
-                val fallback = scored.filter { it.first.decoder.model.language != "de" }.mapNotNull { (side, s) ->
+                val fallback = scored.mapNotNull { (side, s) ->
                     side.decoder.missedSpaceReading(side.taps, typed, side.previous, swears, s.literal)
                         ?.let { Reading(it.text, it.cost + side.switch, it.frequency) }
                 }.minByOrNull { it.cost }

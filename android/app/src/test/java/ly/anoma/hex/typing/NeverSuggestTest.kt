@@ -22,18 +22,11 @@ class NeverSuggestTest {
         }
     }
 
-    // The benchmark's 402 pt layout with its space bar, per language (benchmark/typing/Replay.java).
-    private fun layout(language: String): KeyGrid {
-        val rows = when (language) {
-            "de" -> listOf("qwertzuiopü", "asdfghjklöä", "yxcvbnm")
-            "es" -> listOf("qwertyuiop", "asdfghjklñ", "zxcvbnm")
-            "fr" -> listOf("azertyuiop", "qsdfghjklm", "wxcvbn")
-            "nb" -> listOf("qwertyuiopå", "asdfghjkløæ", "zxcvbnm")
-            else -> listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
-        }
-        val pitch = if (language == "de" || language == "nb") 36.0 else 39.5
+    // The benchmark's 402 pt English layout with its space bar (benchmark/typing/Replay.java).
+    private fun layout(): KeyGrid {
+        val pitch = 39.5
         return KeyGrid(buildMap {
-            for ((row, letters) in rows.withIndex()) for ((i, c) in letters.withIndex())
+            for ((row, letters) in listOf("qwertyuiop", "asdfghjkl", "zxcvbnm").withIndex()) for ((i, c) in letters.withIndex())
                 put(c, KeyPoint(201 + (i - (letters.length - 1) / 2.0) * pitch, 66.5 + 56 * row))
         }, pitch, 56.0, KeyRect(64.76, 212.0, 303.1, 257.0))
     }
@@ -44,9 +37,7 @@ class NeverSuggestTest {
 
     @Test fun completionsRespectBothCategoriesInEveryShippedModel() {
         for ((lang, swear, slur) in listOf(
-            Triple("en", "fuck", "nigger"), Triple("es", "mierda", "maricón"),
-            Triple("de", "scheiße", "neger"), Triple("nb", "faen", "neger"),
-            Triple("fr", "merde", "nègre"), Triple("it", "cazzo", "frocio")
+            Triple("en", "fuck", "nigger"),
         )) {
             val w = word(lang, spatial = false)
             assertTrue("$lang still knows the slur", w.decoder.model.index(slur) >= 0)
@@ -65,11 +56,6 @@ class NeverSuggestTest {
     }
 
     @Test fun nextWordRowsSkipBlockedTargetsAndBackfill() {
-        val nb = word("nb")
-        assertEquals(3, nb.predictions("fy ").size)
-        assertFalse("faen" in nb.predictions("fy "))
-        nb.suggestSwearWords = true
-        assertEquals("faen", nb.predictions("fy ").first())
         val en = word()
         for (on in listOf(false, true)) {
             en.suggestSwearWords = on
@@ -116,7 +102,7 @@ class NeverSuggestTest {
     @Test fun everyListedLiteralIsKeptSeparatelyFromRankedSuggestions() {
         val rows = File("src/main/assets/typing/never-suggest.tsv").readLines()
             .filterNot { it.isBlank() || it.startsWith('#') }.map { it.split('\t') }
-        for (lang in listOf("en", "es", "de", "nb", "fr", "it")) {
+        for (lang in listOf("en")) {
             val w = word(lang)
             for ((layout, kind, entry) in rows) {
                 if (layout != "*" && layout != lang) continue
@@ -171,9 +157,7 @@ class NeverSuggestTest {
     @Test fun ordinaryPrefixesAnatomyAndFalseFriendsRemainAvailable() {
         for ((lang, prefix, expected) in listOf(
             Triple("en", "assu", "assume"), Triple("en", "vulv", "vulva"),
-            Triple("en", "fuc", "fuchsia"), Triple("es", "negro", "negro"),
-            Triple("de", "dick", "dick"), Triple("nb", "fag", "fag"),
-            Triple("fr", "pédal", "pédale"), Triple("it", "finocch", "finocchio")
+            Triple("en", "fuc", "fuchsia"),
         )) {
             val w = word(lang, spatial = false)
             w.explicit(prefix)
@@ -183,7 +167,7 @@ class NeverSuggestTest {
 
     // iOS AutocorrectEngineTests.testACommonBigramDoesNotSwallowADistinctWellAimedTap.
     @Test fun aCommonBigramDoesNotSwallowADistinctWellAimedTap() {
-        val g = layout("en")
+        val g = layout()
         val w = word()
         w.reset("I promised ")
         for ((c, dx, dy) in listOf(Triple('t', -7.2, 6.6), Triple('o', 14.5, 12.5), Triple('m', -10.0, 3.9))) w.tap(g, c, dx, dy)
@@ -193,7 +177,7 @@ class NeverSuggestTest {
 
     // iOS testASpaceTappedAsALetterAboveTheSpaceBarOrMissedSplitsTheWords.
     @Test fun aBottomRowTapAboveTheSpaceBarOrBelowTheLettersSplitsTheWords() {
-        val g = layout("en")
+        val g = layout()
         val w = word()
         for (letter in "bnvc") for (dy in listOf(0.0, -8.0, 10.0)) {
             w.reset("is this ")
@@ -216,23 +200,6 @@ class NeverSuggestTest {
             plain.reset("is this "); for (c in typed) plain.tap(KeyGrid(g.centres, g.pitchX, g.pitchY), c)
             assertNull(typed, plain.replacement())
         }
-    }
-
-    // iOS testSpatialAutocorrectAddsSpanishAccents: an accented letter with a key of its own is
-    // also typed from its base letter's key (ñ from n, ä from a).
-    @Test fun anAccentedLetterAlsoComesFromItsBaseKey() {
-        val es = layout("es")
-        val w = word("es")
-        for ((typed, fixed) in listOf("esta" to null, "aqui" to "aquí", "manana" to "mañana")) {
-            w.reset("")
-            for (c in typed) w.tap(es, c)
-            assertEquals(typed, fixed, w.replacement())
-        }
-        val de = layout("de")
-        val g = word("de")
-        g.reset("das ")
-        for (c in "madchen") g.tap(de, c)
-        assertEquals("Mädchen", g.replacement())
     }
 
     // Types `text` at the key centres as the keyboard would: a space or closing mark finishes the
@@ -258,7 +225,7 @@ class NeverSuggestTest {
     // testSoundAlikeWordsFollowTheWordsAroundThem: the word before decides at the word's own space,
     // else the next word revises it.
     @Test fun wordsTheContextDecides() {
-        val g = layout("en")
+        val g = layout()
         for ((typed, expected) in listOf(
             "id like to go " to "I'd like to go ", "yes id love to " to "yes I'd love to ",
             "i think id help " to "I think I'd help ", "the id in this " to "the id in this ",
@@ -278,14 +245,12 @@ class NeverSuggestTest {
         )) {
             for (spatial in listOf(false, true)) assertEquals("$typed spatial=$spatial", expected, word(spatial = spatial).typed(g, typed))
         }
-        // Only English decides by context.
-        assertEquals("es ill ", word("es", spatial = false).typed(layout("es"), "es ill "))
     }
 
     // iOS testASpaceTappedAtTheSpaceBarsEdgeForALetterJoinsTheWords: a space tapped at the bar's top
     // edge, under a letter the word needed, joins the words at the next word's space.
     @Test fun aSpaceTappedAtTheBarsEdgeForALetterJoinsTheWords() {
-        val g = layout("en")
+        val g = layout()
         fun edge(letter: Char) = KeyPoint(g.centres.getValue(letter).x, 207.5)
         assertEquals("the delicate ", word().typed(g, "the deli ate ", mapOf(8 to edge('c'))))
         assertEquals("so handed ", word().typed(g, "so ha ded ", mapOf(5 to edge('n'))))
@@ -299,7 +264,7 @@ class NeverSuggestTest {
     // iOS testPunctuationAfterATypoFixesItFirst and the "iwant" case: a closing mark corrects the
     // word as space does, never after an abbreviation's period; a split "i" is "I".
     @Test fun aClosingMarkCorrectsTheWordFirst() {
-        val g = layout("en")
+        val g = layout()
         for (mark in ",.!?;:)\"") assertEquals("$mark", "see the$mark ok", word().typed(g, "see teh$mark ok"))
         assertEquals("a receive. approx. a,", word().typed(g, "a recieve. approx. a,"))
         assertEquals("I want ", word().typed(g, "iwant "))
@@ -309,32 +274,9 @@ class NeverSuggestTest {
     // iOS testSpatialAutocorrectCapitalisesANameTypedInLowercase: a name, day or place typed in
     // lowercase takes its capital; a word that is also an ordinary lowercase word doesn't.
     @Test fun aNameTypedInLowercaseTakesItsCapital() {
-        val g = layout("en")
+        val g = layout()
         assertEquals("see Mary on Monday in Boston ", word().typed(g, "see mary on monday in boston "))
         assertEquals("we stood united in china ", word().typed(g, "we stood united in china "))
-        // A name outside the Spanish model is a word as typed, not a typo ("tom" stays, not "toma").
-        val es = layout("es")
-        assertEquals("vi a tom ayer ", word("es").typed(es, "vi a tom ayer "))
-        assertEquals("con Mary en Madrid ", word("es").typed(es, "con mary en madrid "))
-    }
-
-    // iOS testGermanSpatialAutocorrectCapitalisesTheNounItCorrects, with the shipped de.capitals.
-    @Test fun germanNounsTakeTheirCapital() {
-        val g = layout("de")
-        fun fix(before: String, taps: String): String? = word("de").run {
-            reset(before); for (c in taps) tap(g, c); replacement()
-        }
-        assertEquals("Haus", fix("das ", "haua"))
-        assertEquals("Haus", fix("das ", "hsus"))
-        assertEquals("Haus", fix("das ", "haus"))
-        // Written with a capital only some of the time: a noun after an article or determiner.
-        assertEquals("Leben", fix("das ", "leben"))
-        assertNull(fix("zu ", "leben"))
-        assertNull(fix("ich ", "frage"))
-        assertNull(fix("wollt ihr ", "essen"))
-        assertNull(fix("ich ", "kauf"))
-        assertEquals("Ruhe", fix("lass mich in ", "ruhe"))
-        assertEquals("Stadt", fix("die ", "stadt"))
     }
 
     // iOS testSentenceStartersAndNextWordsFillAllThreeSlots and
@@ -350,25 +292,19 @@ class NeverSuggestTest {
         val hi = w.predictions("say hi ")
         assertEquals(3, hi.size)
         assertTrue(hi.toString(), hi.all { it.first().isLowerCase() || it == "I" || it.startsWith("I'") })
-        val es = word("es")
-        assertEquals(3, es.predictions("por ").size)
-        for (context in listOf("@por ", "todo/por ", "por  ")) assertEquals(context, emptyList<String>(), es.predictions(context))
-        for (context in listOf("por. ", "hola\n")) assertEquals(context, listOf("Yo", "El", "La"), es.predictions(context))
-        assertEquals(listOf("yo", "el", "la"), es.predictions("por. ", capitalize = false))
     }
 
     // iOS testShortCompletionsFollowThePhraseAndKeepTheTypedCase, testTheStripNeverRepeatsWhatYouTyped
     // and testAmbiguousContractionsSuggestWithoutAutoReplacing: the strip shows what space will do.
     @Test fun theStripShowsWhatSpaceWillDo() {
         fun strip(language: String, before: String, typed: String, spatial: Boolean = false) = word(language, spatial).run {
-            reset(before); explicitOrTapped(this, typed, spatial, language); strip()
+            reset(before); explicitOrTapped(this, typed, spatial); strip()
         }
         fun first(s: List<Suggestion>) = s.first { it.kind != Suggestion.Kind.Typed }.text
         val like = strip("en", "I would ", "li")
         assertEquals("like", first(like))
         assertTrue(like.toString(), like.none { it.kind == Suggestion.Kind.Fix })
         assertEquals("Like", first(strip("en", "I would ", "Li")))
-        assertEquals("gracias", first(strip("es", "muchas ", "gr")))
         // A word space leaves alone shows itself first; an unfinished one gets three candidates.
         val well = strip("en", "", "well")
         assertEquals(Suggestion("well", Suggestion.Kind.Typed), well[0])
@@ -383,13 +319,13 @@ class NeverSuggestTest {
         // Nothing to offer: only what was typed.
         assertEquals(listOf(Suggestion("kqzx", Suggestion.Kind.Typed)), strip("en", "", "kqzx"))
         // Autocorrect off: completions, never a fix.
-        val off = word(spatial = true).run { reset(""); explicitOrTapped(this, "teh", true, "en"); strip(autocorrect = false) }
+        val off = word(spatial = true).run { reset(""); explicitOrTapped(this, "teh", true); strip(autocorrect = false) }
         assertTrue(off.toString(), off.none { it.kind == Suggestion.Kind.Fix })
     }
 
-    private fun explicitOrTapped(w: TypingWord, text: String, spatial: Boolean, language: String) {
+    private fun explicitOrTapped(w: TypingWord, text: String, spatial: Boolean) {
         if (!spatial) { w.explicit(text); return }
-        val g = layout(language)
+        val g = layout()
         for (c in text) { val p = g.centres.getValue(c.lowercaseChar()); w.letter(c.toString(), p.x, p.y, g) }
     }
 
@@ -425,7 +361,7 @@ class NeverSuggestTest {
     // iOS testSpatialAutocorrectKnowsYourOwnWords, testYourCommonWordsStayLowercaseAndYourVocabulary
     // KeepsItsCapitals and testYourOwnContactsAndReplacementsAreStillOffered, with personal words.
     @Test fun yourOwnWordsAreReadSpelledYourWayAndOffered() {
-        val g = layout("en")
+        val g = layout()
         val w = word()
         personal(w, listOf("Zorbix", "GitHub", "World", "Will", "Kate", "Dick"), mapOf("wtf" to "what the fuck"))
         assertEquals("a slip in your word, and your word typed in lowercase", "Zorbix Zorbix ", w.typed(g, "zorbiz zorbix "))
@@ -442,9 +378,9 @@ class NeverSuggestTest {
         assertTrue("your own words are offered, even listed ones", w.strip().any { it.text == "Dick" })
         w.reset(""); w.explicit("wtf")
         assertEquals("what the fuck", w.replacement())
-        // Entries for another language stay out; Bokmål takes Norwegian's.
-        assertTrue(PersonalWords.applies(null, "en") && PersonalWords.applies("en_US", "en") && PersonalWords.applies("no_NO", "nb"))
-        assertFalse(PersonalWords.applies("es_ES", "en") || PersonalWords.applies("nn_NO", "nb"))
+        // Entries for another language stay out.
+        assertTrue(PersonalWords.applies(null, "en") && PersonalWords.applies("en_US", "en"))
+        assertFalse(PersonalWords.applies("sv_SE", "en"))
         // Without your words nothing of this applies.
         val plain = word()
         assertEquals("zorbiz github ", plain.typed(g, "zorbiz github "))
@@ -453,7 +389,7 @@ class NeverSuggestTest {
     // iOS FullKeyboardEngineTests.testTheLikelyNextLetterClaimsAFewPointsOfItsNeighbour: within 5 dp of
     // its touch area, the letter likelier to come next takes a touch on the border.
     @Test fun theLikelyNextLetterClaimsAFewPointsOfItsNeighbour() {
-        val keys = layout("en").centres.keys
+        val keys = layout().centres.keys
         val w = word()
         assertEquals("the", 'e', w.likelierKey("th", 'd', mapOf('e' to 2.0), keys))
         assertEquals("past reach", 'd', w.likelierKey("th", 'd', mapOf('e' to 6.0), keys))
@@ -462,51 +398,14 @@ class NeverSuggestTest {
         assertEquals("inside a number", 'd', w.likelierKey("th3", 'd', mapOf('e' to 2.0), keys))
     }
 
-    // French and Italian elide: a word starts right after "l'", "qu'" or "dell'", and is read there.
-    @Test fun aWordStartsAfterAnElision() {
-        val fr = word("fr")
-        assertTrue(fr.startsWord("le chat de l'"))
-        assertTrue(fr.startsWord("qu'"))
-        assertFalse("not after any apostrophe", fr.startsWord("aujourd'"))
-        assertFalse("English has none", word("en").startsWord("l'"))
-        assertTrue(word("it").startsWord("dell'"))
-        assertEquals("l", TypingWord.previousWord("le chat de l'"))
-        val g = KeyGrid(buildMap {
-            for ((row, letters) in listOf("azertyuiop", "qsdfghjklm", "wxcvbn").withIndex())
-                for ((i, c) in letters.withIndex()) put(c, KeyPoint(201 + (i - (letters.length - 1) / 2.0) * 39.5, 66.5 + 56 * row))
-        }, 39.5, 56.0)
-        fr.reset("le chat de l'")
-        for ((c, aimed) in "hpmme".zip("homme")) { val p = g.centres.getValue(aimed); fr.letter(c.toString(), p.x, p.y, g) }
-        assertEquals("homme", fr.replacement())
-        // The same letters run together with the apostrophe left out ("cest") are left to the decoder.
-        fr.reset("")
-        for (c in "cest") { val p = g.centres.getValue(c); fr.letter(c.toString(), p.x, p.y, g) }
-        assertEquals("c'est", fr.replacement())
-    }
-
-    // French and Italian words the same letters spell with and without an accent ("a"/"à", "e"/"è"):
-    // the words around them decide, as English's apostrophes.
-    @Test fun accentsTheWordsAroundDecide() {
-        val fr = layout("fr")
-        assertEquals("je vais à Paris ", word("fr").typed(fr, "je vais a paris "))
-        assertEquals("il a faim ", word("fr").typed(fr, "il a faim "))
-        assertEquals("faire ça sera facile ", word("fr").typed(fr, "faire ca sera facile "))
-        val it = layout("it")
-        assertEquals("non è esagerato ", word("it").typed(it, "non e esagerato "))
-        assertEquals("il vostro indirizzo è cambiato ", word("it").typed(it, "il vostro indirizzo e cambiato "))
-        // At a sentence's start, its capital and all, once the next word says so.
-        val e = word("it"); e.reset("")
-        val p = it.centres.getValue('e'); e.letter("E", p.x, p.y, it)
-        e.finish(' ', KeyPoint(183.93, 234.5), it)
-        e.reset("E "); for (c in "andato") e.tap(it, c)
-        assertEquals(Correction("E andato", "È andato"), e.finish(' ', KeyPoint(183.93, 234.5), it))
-        assertEquals("pane e burro ", word("it").typed(it, "pane e burro "))
+    @Test fun englishWordsDoNotStartAfterAnApostrophe() {
+        assertFalse(word("en").startsWord("l'"))
     }
 
     // iOS #2244: a run no word reads may still be a missed space with a slip in the second word, or
     // three or more words typed with no spaces; never a one-word typo or a likelier reading.
     @Test fun aMissedSpaceWithASlipOrWordsRunTogether() {
-        val g = layout("en")
+        val g = layout()
         for ((typed, expected) in listOf(
             "specialchsracter " to "special character ", "goodmotning " to "good morning ",
             "nextwerk " to "next week ", "lookingforwsrd " to "looking forward ", "emailaddtess " to "email address ",
@@ -524,27 +423,10 @@ class NeverSuggestTest {
         assertTrue(w.suggestions().joinToString(), w.suggestions().any { it.equals("special character", ignoreCase = true) })
     }
 
-    // Rare words the books use, outside the models (<lang>.valid), kept as typed: each of these is read
-    // as a commoner word, or words run together, without its list. A model word typed without its
-    // accent still gets it.
-    @Test fun rareWordsTheBooksUseAreKept() {
-        for ((lang, typed) in listOf("es" to "caminad", "es" to "vanesa", "it" to "scherzate", "it" to "antidepressivo",
-            "de" to "analysiere", "de" to "handelst", "nb" to "navar", "nb" to "støyet")) {
-            val w = word(lang)
-            w.reset("")
-            for (c in typed) w.tap(layout(lang), c)
-            assertNull("$lang $typed", w.replacement())
-        }
-        val es = word("es")
-        es.reset("")
-        for (c in "volvere") es.tap(layout("es"), c)
-        assertEquals("volveré", es.replacement())
-    }
-
     // iOS: Auto-capitalisation off (Settings › Keyboard), autocorrect adds no capital you didn't type;
     // your own words and a capital you typed keep theirs.
     @Test fun autoCapitalisationOffAddsNoCapitals() {
-        val g = layout("en")
+        val g = layout()
         val on = word()
         val off = word().also { it.addsCapitals = false }
         for ((typed, capitalised, plain) in listOf(Triple("i", "I", null), Triple("im", "I'm", "i'm"), Triple("monday", "Monday", null))) {
@@ -564,21 +446,14 @@ class NeverSuggestTest {
         personal(off, listOf("GitHub"))
         off.reset("so "); for (c in "github") off.tap(g, c)
         assertEquals("GitHub", off.replacement())
-        val de = layout("de")
-        for ((w, expected) in listOf(word("de") to "Haus", word("de").also { it.addsCapitals = false } to null)) {
-            w.reset("das "); for (c in "haus") w.tap(de, c)
-            assertEquals(expected, w.replacement())
-        }
     }
 
-    // Every language has words for the strip between words: at a sentence's start, after a comma and
-    // after a word the pairs don't know (0.2.0's French and Italian showed nothing there).
+    // The strip has words between words: at a sentence's start, after a comma and after a word the
+    // pairs don't know.
     @Test fun everyLanguageOffersWordsBetweenWords() {
-        for (lang in listOf("en", "es", "de", "nb", "fr", "it")) {
+        for (lang in listOf("en")) {
             val w = word(lang)
             for (before in listOf("", "zzqx, ", "zzqx ")) assertEquals("$lang [$before]", 3, w.predictions(before).size)
         }
-        assertEquals(listOf("Je", "Le", "La"), word("fr").predictions(""))
-        assertEquals(listOf("e", "ma", "che"), word("it").predictions("ciao, "))
     }
 }

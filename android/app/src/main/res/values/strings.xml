@@ -1,7 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <!-- Hex's interface is in English and Simplified Chinese (values-zh-rCN), as iPhone Hex's is. German, Spanish,
-         French, Italian and Norwegian have only the emoji picker's titles, so lint is told not to expect the rest
-         there (MissingTranslation); every string here has a Chinese one. -->
+    <!-- Hex's interface is in English and Simplified Chinese (values-zh-rCN), as iPhone Hex's is; every string
+         here has a Chinese one. -->
     <string name="app_name" translatable="false">Hex</string>
     <string name="full_keyboard">Full keyboard</string>
     <string name="back">Back</string>
@@ -81,7 +80,7 @@
     <string name="dictation_end_with_period">End with a period</string>
     <string name="dictation_end_with_period_detail">Off drops the final period, keeps ? and !</string>
     <string name="settings_translate">Translate what I say</string>
-    <string name="settings_translate_detail">Dictate in Spanish, write in English</string>
+    <string name="settings_translate_detail">Dictate in Swedish, write in English</string>
     <string name="settings_clean">Clean up what I say</string>
     <string name="settings_clean_detail">Drops ums, repeats and corrected words</string>
     <string name="dictation_vocabulary">Custom vocabulary</string>
