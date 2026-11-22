@@ -56,7 +56,9 @@ class HexKeyboard : InputMethodService() {
     }
     private val typingChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == TypingPreferences.SUGGEST_SWEAR_WORDS) engine.swearWordsChanged()
+        if (key == TypingPreferences.KEY_HEIGHT || key == TypingPreferences.SIDE_MARGIN) resized = true
     }
+    private var resized = false
     internal val previewAllowed get() = !engine.secure
 
     override fun onCreate() {
@@ -84,6 +86,7 @@ class HexKeyboard : InputMethodService() {
     }
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        if (resized && view != null) { resized = false; setInputView(onCreateInputView()) }
         view?.cancelGestures()
         // Another type in the same box: back to its keys, as a new field opens (configureTyping draws them).
         if (typeChanged) view?.closeMenu(configure = false)

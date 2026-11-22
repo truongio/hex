@@ -101,6 +101,8 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val autocorrect = remember(revision) { typing.autocorrect }
     val swearWords = remember(revision) { typing.suggestSwearWords }
     val spatial = remember(revision) { typing.spatial }
+    val keyHeight = remember(revision) { typing.keyHeight }
+    val sideMargin = remember(revision) { typing.sideMargin }
     val popups = remember(revision) { typing.popups }
     val haptics = remember(revision) { typing.haptics }
     var copied by remember(transcript) { mutableStateOf(false) }
@@ -229,6 +231,10 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                             // The words the keyboard keeps and suggests are Android's own personal dictionary.
                             Rule(); Entry(stringResource(R.string.settings_personal_dictionary), stringResource(R.string.settings_personal_dictionary_detail), "↗",
                                 { context.startActivity(Intent(Settings.ACTION_USER_DICTIONARY_SETTINGS)) })
+                            Rule(); Stepper(stringResource(R.string.settings_key_height), stringResource(R.string.settings_key_height_detail),
+                                "$keyHeight%", { typing.keyHeight = keyHeight - 5 }, { typing.keyHeight = keyHeight + 5 })
+                            Rule(); Stepper(stringResource(R.string.settings_side_margin), stringResource(R.string.settings_side_margin_detail),
+                                "$sideMargin dp", { typing.sideMargin = sideMargin - 2 }, { typing.sideMargin = sideMargin + 2 })
                             Rule(); Toggle(stringResource(R.string.settings_popups), stringResource(R.string.settings_popups_detail), popups) { typing.popups = it }
                             Rule(); Toggle(stringResource(R.string.settings_haptics), stringResource(R.string.settings_haptics_detail), haptics) { typing.haptics = it }
                         }
@@ -346,6 +352,17 @@ private fun reflow(lines: List<String>) = buildString {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         RowTitle(title, note)
         if (action != null && value.isNotEmpty()) Label(value, muted = true, size = if (value == "›") 22 else 15)
+    }
+}
+@Composable private fun Stepper(title: String, note: String, value: String, less: () -> Unit, more: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        RowTitle(title, note)
+        for ((label, step) in listOf("−" to less, "+" to more)) {
+            if (label == "+") Label(value, muted = true, size = 15)
+            Box(Modifier.size(36.dp).background(colorResource(R.color.modifier), RoundedCornerShape(50))
+                .clickable(role = Role.Button, onClick = step), contentAlignment = Alignment.Center) { Label(label, size = 18) }
+        }
     }
 }
 @Composable private fun Toggle(title: String, note: String, on: Boolean, enabled: Boolean = true, change: (Boolean) -> Unit) {

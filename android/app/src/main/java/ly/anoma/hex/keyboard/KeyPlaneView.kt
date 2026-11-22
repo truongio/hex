@@ -48,8 +48,9 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
     private val modifier = caps.modifier
     private val quiet = context.getColor(R.color.quiet)
     private val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    private val rowHeight = px(if (landscape) KeyboardMetrics.ROW_LANDSCAPE else KeyboardMetrics.ROW)
-    private val keyHeight = px(if (landscape) KeyboardMetrics.KEY_HEIGHT_LANDSCAPE else KeyboardMetrics.KEY_HEIGHT)
+    private val scale = ime.feedback.keyHeight / 100f
+    private val rowHeight = px(scale * if (landscape) KeyboardMetrics.ROW_LANDSCAPE else KeyboardMetrics.ROW)
+    private val keyHeight = px(scale * if (landscape) KeyboardMetrics.KEY_HEIGHT_LANDSCAPE else KeyboardMetrics.KEY_HEIGHT)
     private val insetTop = (rowHeight - keyHeight) / 2
     private val insetBottom = rowHeight - keyHeight - insetTop
     private val bottomExtra = px(if (landscape) KeyboardMetrics.BOTTOM_LANDSCAPE else KeyboardMetrics.BOTTOM)

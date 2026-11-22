@@ -32,6 +32,12 @@ internal class TypingPreferences(context: Context) {
     var spatial: Boolean
         get() = prefs.getBoolean("spatial", true)
         set(value) { prefs.edit().putBoolean("spatial", value).apply() }
+    var keyHeight: Int
+        get() = prefs.getInt(KEY_HEIGHT, 100).coerceIn(KEY_HEIGHTS)
+        set(value) { prefs.edit().putInt(KEY_HEIGHT, value.coerceIn(KEY_HEIGHTS)).apply() }
+    var sideMargin: Int
+        get() = prefs.getInt(SIDE_MARGIN, 0).coerceIn(SIDE_MARGINS)
+        set(value) { prefs.edit().putInt(SIDE_MARGIN, value.coerceIn(SIDE_MARGINS)).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
@@ -53,6 +59,10 @@ internal class TypingPreferences(context: Context) {
     companion object {
         const val SUGGEST_SWEAR_WORDS = "suggestSwearWords"
         private const val SECOND_LANGUAGE = "secondLanguage"
+        const val KEY_HEIGHT = "keyHeight"
+        const val SIDE_MARGIN = "sideMargin"
+        val KEY_HEIGHTS = 70..140
+        val SIDE_MARGINS = 0..48
         private const val NONE = "none"
     }
 }

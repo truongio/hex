@@ -34,7 +34,8 @@ internal class KeyboardView(context: Context, private val ime: HexKeyboard) : Li
         // above it. Where the window already ends above the navigation bar (Android 12) it is 0.
         setOnApplyWindowInsetsListener { _, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            setPadding(bars.left, 0, bars.right, bars.bottom)
+            val margin = (ime.feedback.sideMargin * resources.displayMetrics.density).toInt()
+            setPadding(bars.left + margin, 0, bars.right + margin, bars.bottom)
             insets
         }
         setBackgroundColor(context.getColor(R.color.keyboard))

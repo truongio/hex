@@ -90,6 +90,10 @@
     <string name="settings_keyboard_layout">Keyboard layout</string>
     <string name="settings_layout_follows">Follows dictation · %1$s</string>
     <string name="settings_layout_automatic_detail">Follows your dictation language</string>
+    <string name="settings_key_height">Key height</string>
+    <string name="settings_key_height_detail">Taller or shorter keys</string>
+    <string name="settings_side_margin">Side margins</string>
+    <string name="settings_side_margin_detail">Keeps keys off curved screen edges</string>
     <string name="settings_second_language">Second language</string>
     <string name="settings_second_language_detail">Autocorrect keeps both languages in one sentence</string>
     <string name="settings_second_language_none">None</string>
