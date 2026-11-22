@@ -195,9 +195,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         enterIcon.setImageResource(R.drawable.ic_enter)
         enterIcon.imageTintList = ColorStateList.valueOf(ink)
         enterKey.face.addView(enterIcon, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
-        var at = 0f
-        for ((key, width) in listOf(modeKey to KeyboardMetrics.MODE, comma to KeyboardMetrics.COMMA, emojiKey to KeyboardMetrics.EMOJI,
-                spaceKey to KeyboardMetrics.SPACE, period to KeyboardMetrics.PERIOD, enterKey to KeyboardMetrics.ENTER)) { bottom.add(key, at, width); at += width }
+        layoutBottom(FieldKind.Text)
         // Gboard's emoji panel ends with ABC and delete; Hex puts a space bar between them.
         val letters = caps.cap(context.getString(R.string.keyboard_letters_label), context.getString(R.string.keyboard_letters),
             modifier, 17f) { host.closeEmoji(); ime.engine.letters() }
@@ -228,6 +226,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         clearCallout(); endSlide(); grid = null; letters.clear(); caseKeys.clear(); slides.clear(); shiftIcon = null
         rows.removeAllViews()
         page.pad?.let { showPad(page, it); return }
+        layoutBottom(page.kind)
         bottom.visibility = VISIBLE
         val language = page.language
         val symbols = page.symbols
@@ -328,6 +327,21 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         enterIcon.setImageResource(actionIcon(page.enter.action))
         enterIcon.visibility = if (label == null) View.VISIBLE else View.GONE
         enterKey.contentDescription = label ?: actionLabel(page.enter.action) ?: context.getString(R.string.keyboard_return)
+    }
+
+    private var bottomKeys: List<View> = emptyList()
+    private fun layoutBottom(kind: FieldKind) {
+        val showComma = !ime.feedback.hideComma || kind != FieldKind.Text
+        val showEmoji = !ime.feedback.hideEmoji
+        val spare = (if (showComma) 0f else KeyboardMetrics.COMMA) + (if (showEmoji) 0f else KeyboardMetrics.EMOJI)
+        val keys = listOfNotNull(modeKey to KeyboardMetrics.MODE, (comma to KeyboardMetrics.COMMA).takeIf { showComma },
+            (emojiKey to KeyboardMetrics.EMOJI).takeIf { showEmoji }, spaceKey to KeyboardMetrics.SPACE + spare,
+            period to KeyboardMetrics.PERIOD, enterKey to KeyboardMetrics.ENTER)
+        if (keys.map { it.first } == bottomKeys) return
+        bottom.removeAllViews()
+        var at = 0f
+        for ((key, width) in keys) { bottom.add(key, at, width); at += width }
+        bottomKeys = keys.map { it.first }
     }
 
     /** A pad in place of the letter rows and the bottom row (Gboard's for number, phone and date fields,

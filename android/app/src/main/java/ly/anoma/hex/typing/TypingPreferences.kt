@@ -44,6 +44,12 @@ internal class TypingPreferences(context: Context) {
     var holdMs: Int
         get() = prefs.getInt(HOLD_MS, 150).coerceIn(HOLD_RANGE)
         set(value) { prefs.edit().putInt(HOLD_MS, value.coerceIn(HOLD_RANGE)).apply() }
+    var hideComma: Boolean
+        get() = prefs.getBoolean(HIDE_COMMA, false)
+        set(value) { prefs.edit().putBoolean(HIDE_COMMA, value).apply() }
+    var hideEmoji: Boolean
+        get() = prefs.getBoolean(HIDE_EMOJI, false)
+        set(value) { prefs.edit().putBoolean(HIDE_EMOJI, value).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
@@ -68,6 +74,8 @@ internal class TypingPreferences(context: Context) {
         const val KEY_HEIGHT = "keyHeight"
         const val SIDE_MARGIN = "sideMargin"
         const val NUMBER_ROW = "numberRow"
+        const val HIDE_COMMA = "hideComma"
+        const val HIDE_EMOJI = "hideEmoji"
         private const val HOLD_MS = "holdMs"
         val HOLD_RANGE = 50..1000
         val KEY_HEIGHTS = 70..140
