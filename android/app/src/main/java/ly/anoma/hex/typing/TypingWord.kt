@@ -377,6 +377,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         return if (addsCapitals || text.first().isUpperCase()) choice else choice.lowercase().takeIf { it != text }
     }
 
+    fun known(spelling: String) = knows(spelling)
     private fun knows(spelling: String) = spelling.lowercase().let {
         model.index(it) >= 0 || model.known(it) || it in shorthand || (decoder.personal?.index(it) ?: -1) >= 0 ||
             other?.model?.let { m -> m.index(it) >= 0 || m.known(it) } == true

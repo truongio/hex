@@ -52,7 +52,7 @@ class HexKeyboard : InputMethodService() {
     }
     internal val engine by lazy {
         KeyboardEngine(InputConnectionTarget(this), feedback, { layoutLanguage }, { SpatialDecoder(TypingModel.asset(assets, it)) },
-            readPersonal = { PersonalWords.read(contentResolver, it, bundledWords) }, background = words,
+            readPersonal = { PersonalWords.read(contentResolver, it, bundledWords + feedback.learnedWords) }, background = words,
             emails = { bundledEmails })
     }
     private val bundledWords by lazy {
@@ -65,6 +65,7 @@ class HexKeyboard : InputMethodService() {
     }
     private val typingChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == TypingPreferences.SUGGEST_SWEAR_WORDS) engine.swearWordsChanged()
+        if (key == TypingPreferences.LEARNED_WORDS) engine.personalWordsChanged()
         if (key == TypingPreferences.KEY_HEIGHT || key == TypingPreferences.SIDE_MARGIN || key == TypingPreferences.NUMBER_ROW ||
             key == TypingPreferences.HIDE_COMMA || key == TypingPreferences.HIDE_EMOJI ||
             key == TypingPreferences.SYMBOL_HOLDS) resized = true

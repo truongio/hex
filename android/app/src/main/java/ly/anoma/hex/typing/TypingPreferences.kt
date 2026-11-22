@@ -59,6 +59,16 @@ internal class TypingPreferences(context: Context) {
     var symbolHolds: Boolean
         get() = prefs.getBoolean(SYMBOL_HOLDS, true)
         set(value) { prefs.edit().putBoolean(SYMBOL_HOLDS, value).apply() }
+    val learnedWords: List<String>
+        get() = prefs.getString(LEARNED_WORDS, null)?.split('\n')?.filter(String::isNotEmpty).orEmpty()
+    fun noteWord(word: String) {
+        val counts = WordCounts.parse(prefs.getString(WORD_COUNTS, null))
+        val (next, learned) = WordCounts.note(counts, word)
+        val edit = prefs.edit().putString(WORD_COUNTS, WordCounts.format(next))
+        if (learned) edit.putString(LEARNED_WORDS, (learnedWords.filterNot { it.equals(word, true) } + word).takeLast(WordCounts.KEPT).joinToString("\n"))
+        edit.apply()
+    }
+    fun clearLearned() { prefs.edit().remove(WORD_COUNTS).remove(LEARNED_WORDS).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
@@ -86,6 +96,8 @@ internal class TypingPreferences(context: Context) {
         const val HIDE_COMMA = "hideComma"
         const val HIDE_EMOJI = "hideEmoji"
         const val SYMBOL_HOLDS = "symbolHolds"
+        const val LEARNED_WORDS = "learnedWords"
+        private const val WORD_COUNTS = "wordCounts"
         private const val HOLD_MS = "holdMs"
         val HOLD_RANGE = 50..1000
         val KEY_HEIGHTS = 70..140

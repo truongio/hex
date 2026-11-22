@@ -312,6 +312,7 @@ internal class KeyboardEngine(
         if (symbols || !canEndWord()) return
         val old = w.token
         if (old.isNotEmpty() && !endsWith(prefix + old)) { resetTyping(); surface?.suggestions(emptyList()); return }
+        if (old.isNotEmpty() && text == old) noteTyped(old)
         if (old.isEmpty() && !w.startsWord(before())) return
         val holds = SpaceRules.separates(target.after(1))
         clearSpaces()
@@ -356,7 +357,16 @@ internal class KeyboardEngine(
                 }
             }
         }
+        val typed = word?.token?.takeIf { it.isNotEmpty() && endsWith(prefix + it) }
         target.commit(" "); resetTyping(); afterSpace(now)
+        typed?.let(::noteTyped)
+    }
+    private fun noteTyped(spelling: String) {
+        val w = word ?: return
+        if (noLearning || secure || spelling.length < 2 || spelling.any { !it.isLetter() && it != '\'' } || w.known(spelling)) return
+        val first = spelling.first()
+        val start = TypingWord.startsSentence(before().dropLast(spelling.length + 1))
+        feedback.noteWord(if (start && first.isUpperCase() && spelling.drop(1).none { it.isUpperCase() }) spelling.lowercase() else spelling)
     }
     private fun afterSpace(now: Long) {
         val b = before()
@@ -403,6 +413,7 @@ internal class KeyboardEngine(
         if (last != null && endsWith(last.replacement + " ") && replace(last.replacement + " ", last.original)) {
             if (!noLearning) feedback.undo(last.language, last.original, last.replacement)
             val typed = last.original.substringAfterLast(' ')
+            if (!noLearning && word?.known(typed) == false && typed.all { it.isLetter() || it == '\'' }) feedback.noteWord(typed)
             prefix = before().dropLast(typed.length).takeLast(40); word?.restored(typed, prefix)
             if (expectedCaret >= 0) expectedCaret += last.original.length - last.replacement.length - 1
             surface?.suggestions(listOf(Suggestion(typed, Suggestion.Kind.Typed))); return
