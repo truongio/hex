@@ -53,7 +53,9 @@ internal class KeyboardEngine(
     private val models = HashMap<String, SpatialDecoder>()
     private var word: TypingWord? = null
     private var editor: EditorInfo? = null
-    private var ordinaryField = false
+    private var fieldTyping = FieldTyping.Literal
+    private val ordinaryField get() = fieldTyping != FieldTyping.Literal
+    private val autocorrecting get() = feedback.autocorrect && fieldTyping == FieldTyping.Full
     private var prefix = ""
     private var expectedCaret = -1
     private data class Undo(val language: String, val original: String, val replacement: String)
@@ -91,11 +93,7 @@ internal class KeyboardEngine(
             InputType.TYPE_CLASS_NUMBER -> variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
             else -> false
         }
-        ordinaryField = kind == InputType.TYPE_CLASS_TEXT && !secure &&
-            attribute.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING == 0 &&
-            variation !in setOf(InputType.TYPE_TEXT_VARIATION_URI, InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
-                InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_FILTER) &&
-            attribute.inputType and (InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE) == 0
+        fieldTyping = if (secure) FieldTyping.Literal else FieldTyping.of(attribute.inputType, attribute.imeOptions)
         resetTyping(); word = null; clearSpaces()
         pad = Pad.of(attribute.inputType)
         symbols = pad != null
@@ -207,7 +205,7 @@ internal class KeyboardEngine(
         cancelChip()
         if (w != null && w.token.isNotEmpty()) {
             surface?.suggestions(w.strip(autocorrect = false))
-            if (!feedback.autocorrect || !canEndWord()) return
+            if (!autocorrecting || !canEndWord()) return
             val token = w.token
             pendingChip = Runnable {
                 pendingChip = null
@@ -242,7 +240,7 @@ internal class KeyboardEngine(
      * while autocorrect is on in an ordinary text field on the letters page, and never with caps lock. */
     fun likelierLetter(hit: Char, near: Map<Char, Double>, keys: Collection<Char>): Char {
         val w = word ?: return hit
-        if (near.isEmpty() || symbols || shift.locked || !feedback.autocorrect || !target.connected) return hit
+        if (near.isEmpty() || symbols || shift.locked || !autocorrecting || !target.connected) return hit
         return w.likelierKey(before(), hit, near, keys)
     }
     /** Shift as the keys show it: letters type capitals while it is on or held. */
@@ -331,7 +329,7 @@ internal class KeyboardEngine(
             // Your text replacements first, whatever autocorrect is set to; they never offer an undo.
             val swap = w.textReplacement(b)
             if (swap != null && replace(swap.original, swap.replacement + " ")) { resetTyping(); afterSpace(now); return }
-            if (feedback.autocorrect && old.isNotEmpty() && endsWith(prefix + old)) {
+            if (autocorrecting && old.isNotEmpty() && endsWith(prefix + old)) {
                 val fix = w.finish(' ', point, grid)
                 if (fix != null && !feedback.blocked(lang, fix.original, fix.replacement) && replace(fix.original, fix.replacement + " ")) {
                     cancelChip()
@@ -367,7 +365,7 @@ internal class KeyboardEngine(
         if (mark && w != null && !symbols && canEndWord()) {
             val swap = w.textReplacement(text)
             if (swap != null && replace(swap.original, swap.replacement + value)) { resetTyping(); showPredictions(before()); inputDone(); return }
-            if (feedback.autocorrect && w.token.isNotEmpty() && endsWith(prefix + w.token)) {
+            if (autocorrecting && w.token.isNotEmpty() && endsWith(prefix + w.token)) {
                 val fix = w.finish(value[0])
                 if (fix != null && !feedback.blocked(w.decoder.model.language, fix.original, fix.replacement) &&
                     replace(fix.original, fix.replacement + value)) { resetTyping(); showPredictions(before()); inputDone(); return }

@@ -32,6 +32,26 @@ internal enum class FieldKind(val mark: String) {
     }
 }
 
+internal enum class FieldTyping {
+    Literal, Suggest, Full;
+    companion object {
+        private val SECRET = setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
+        private val ADDRESS = setOf(InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)
+        fun of(inputType: Int, imeOptions: Int): FieldTyping {
+            if (inputType and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return Literal
+            val variation = inputType and InputType.TYPE_MASK_VARIATION
+            if (variation in SECRET || variation in ADDRESS) return Literal
+            if (imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0) return Literal
+            val search = imeOptions and EditorInfo.IME_MASK_ACTION == EditorInfo.IME_ACTION_SEARCH ||
+                variation == InputType.TYPE_TEXT_VARIATION_FILTER || inputType and InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE != 0
+            if (variation == InputType.TYPE_TEXT_VARIATION_URI) return Suggest
+            if (search) return Full
+            return if (inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0) Literal else Full
+        }
+    }
+}
+
 /** What the keys show: one page of one layout, with shift, the enter key and the field's kind. */
 internal data class KeyboardPage(
     val language: Spoken,
