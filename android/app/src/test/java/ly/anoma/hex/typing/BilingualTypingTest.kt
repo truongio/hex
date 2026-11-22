@@ -83,4 +83,22 @@ class BilingualTypingTest {
         val w = TypingWord(own, true, en)
         assertEquals("debloat TikTok ", w.typed("debloat tiktok "))
     }
+
+    @Test fun rareAndUnknownWordsAreWorthLearningCommonOnesAreNot() {
+        val w = mixed()
+        assertTrue(w.worthLearning("zorbexflim"))
+        assertTrue(sv.model.validLiteral("arbetsintervjun") || sv.model.index("arbetsintervjun") >= 0)
+        assertTrue(w.worthLearning("arbetsintervjun"))
+        assertFalse(w.worthLearning("och"))
+        assertFalse(w.worthLearning("meeting"))
+        val own = decoder("sv").also { it.personal = PersonalWords(it.model, listOf("zorbexflim"), emptyMap()) }
+        assertFalse(TypingWord(own, true, en).worthLearning("Zorbexflim"))
+    }
+
+    @Test fun aLearnedWordIsOfferedAsItsFirstLettersAreTyped() {
+        val own = decoder("sv").also { it.personal = PersonalWords(it.model, listOf("arbetsintervjun"), emptyMap()) }
+        val w = TypingWord(own, true, en); w.reset("jag har en ")
+        for (c in "arbe") { val p = grid.centres.getValue(c); w.letter(c.toString(), p.x, p.y, grid) }
+        assertTrue(w.strip().toString(), w.strip().any { it.text == "arbetsintervjun" })
+    }
 }

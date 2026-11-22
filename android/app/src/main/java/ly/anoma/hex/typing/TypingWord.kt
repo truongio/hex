@@ -378,6 +378,12 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
     }
 
     fun known(spelling: String) = knows(spelling)
+    fun worthLearning(spelling: String): Boolean {
+        val lower = spelling.lowercase()
+        if ((decoder.personal?.index(lower) ?: -1) >= 0 || (other?.personal?.index(lower) ?: -1) >= 0) return false
+        val costs = listOfNotNull(model, other?.model).mapNotNull { m -> m.index(lower).takeIf { it >= 0 }?.let(m::frequencyCost) }
+        return costs.isEmpty() || costs.min() >= COMMON_COST
+    }
     private fun knows(spelling: String) = spelling.lowercase().let {
         model.index(it) >= 0 || model.known(it) || it in shorthand || (decoder.personal?.index(it) ?: -1) >= 0 ||
             other?.model?.let { m -> m.index(it) >= 0 || m.known(it) } == true
@@ -412,6 +418,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         const val REACH = 5.0
         const val ODDS_PER_DP = .8
         const val SWITCH = 2.5
+        const val COMMON_COST = 104
         private const val CONTEXT_WORDS = 3
         // Words the strip offers in place of these, but space never puts in: each is a word too.
         private val suggestOnly = mapOf("ill" to "I'll", "id" to "I'd", "were" to "we're", "wed" to "we'd",
