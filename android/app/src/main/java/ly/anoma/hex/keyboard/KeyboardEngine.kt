@@ -48,6 +48,7 @@ internal class KeyboardEngine(
         const val CHIP_PAUSE_MS = 100L
         /** Undo dictation stays this long unless something else happens first (iPhone Hex: 12 s). */
         const val UNDO_MS = 12_000L
+        const val EMAIL_PREFIX = 3
     }
     private var pendingChip: Runnable? = null
     var surface: KeyboardSurface? = null
@@ -211,15 +212,15 @@ internal class KeyboardEngine(
     private fun showSuggestions(w: TypingWord?) {
         cancelChip()
         if (w != null && w.token.isNotEmpty()) {
-            surface?.suggestions(w.strip(autocorrect = false))
+            surface?.suggestions(withEmail(w.strip(autocorrect = false)))
             if (!autocorrecting || !canEndWord()) return
             val token = w.token
             pendingChip = Runnable {
                 pendingChip = null
-                if (word === w && w.token == token) surface?.suggestions(w.strip(autocorrect = true).map {
+                if (word === w && w.token == token) surface?.suggestions(withEmail(w.strip(autocorrect = true).map {
                     if (it.kind == Suggestion.Kind.Fix && feedback.blocked(w.decoder.model.language, token, it.text))
                         Suggestion(it.text, Suggestion.Kind.Word) else it
-                })
+                }))
             }.also { main.postDelayed(it, CHIP_PAUSE_MS) }
             return
         }
@@ -297,9 +298,9 @@ internal class KeyboardEngine(
      * key that starts a word. A space right after a picked word is swallowed (it still counts towards
      * double-space), and a closing mark takes its place. */
     fun pickSuggestion(text: String) {
-        if (emailField) {
+        if (emailField || ('@' in text && text.startsWith(emailTyped(), ignoreCase = true))) {
             edited()
-            if (replace(emailTyped(), text)) { surface?.suggestions(emptyList()); inputDone() }
+            if (replace(emailTyped(), text)) { resetTyping(); clearSpaces(); surface?.suggestions(emptyList()); inputDone() }
             return
         }
         val w = word ?: return
@@ -417,11 +418,22 @@ internal class KeyboardEngine(
         showEmails()
     }
     private fun emailTyped() = before().takeLastWhile { !it.isWhitespace() && it != ',' && it != ';' }
-    private fun showEmails() {
-        if (!emailField || symbols || !target.connected) return
+    private fun emailMatches(): List<String> {
+        if (secure || !target.connected) return emptyList()
         val typed = emailTyped()
-        val known = (feedback.learnedEmails + emails()).distinctBy { it.lowercase() }
-        surface?.suggestions(EmailSuggestions.matching(known, typed).map { Suggestion(it, Suggestion.Kind.Word) })
+        if (!emailField && typed.length < EMAIL_PREFIX) return emptyList()
+        return EmailSuggestions.matching((feedback.learnedEmails + emails()).distinctBy { it.lowercase() }, typed)
+    }
+    private fun withEmail(slots: List<Suggestion>): List<Suggestion> {
+        val mail = emailMatches().firstOrNull() ?: return slots
+        return slots.filter { it.text != mail }.take(2) + Suggestion(mail, Suggestion.Kind.Word)
+    }
+    private fun showEmails(): Boolean {
+        val mail = emailMatches()
+        if (mail.isEmpty() && !emailField) return false
+        cancelChip()
+        surface?.suggestions(mail.map { Suggestion(it, Suggestion.Kind.Word) })
+        return mail.isNotEmpty()
     }
     private fun learnEmails() {
         if (!emailField || !target.connected) return
