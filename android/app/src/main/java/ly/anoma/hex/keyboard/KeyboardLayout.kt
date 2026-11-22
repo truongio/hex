@@ -33,7 +33,7 @@ internal enum class FieldKind(val mark: String) {
 }
 
 internal enum class FieldTyping {
-    Literal, Suggest, Full;
+    Literal, Full;
     companion object {
         private val SECRET = setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
             InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
@@ -45,8 +45,7 @@ internal enum class FieldTyping {
             if (imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0) return Literal
             val search = imeOptions and EditorInfo.IME_MASK_ACTION == EditorInfo.IME_ACTION_SEARCH ||
                 variation == InputType.TYPE_TEXT_VARIATION_FILTER || inputType and InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE != 0
-            if (variation == InputType.TYPE_TEXT_VARIATION_URI) return Suggest
-            if (search) return Full
+            if (search || variation == InputType.TYPE_TEXT_VARIATION_URI) return Full
             return if (inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0) Literal else Full
         }
     }

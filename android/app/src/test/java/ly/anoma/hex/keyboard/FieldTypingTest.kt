@@ -14,9 +14,9 @@ class FieldTypingTest {
         assertEquals(FieldTyping.Full, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_AUTO_COMPLETE, IME_ACTION_GO))
     }
 
-    @Test fun addressBarsCompleteWithoutCorrecting() {
-        assertEquals(FieldTyping.Suggest, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_URI, IME_ACTION_GO))
-        assertEquals(FieldTyping.Suggest, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_URI or TYPE_TEXT_FLAG_NO_SUGGESTIONS, IME_ACTION_GO))
+    @Test fun browserBarsCompleteAndCorrect() {
+        assertEquals(FieldTyping.Full, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_URI, IME_ACTION_GO))
+        assertEquals(FieldTyping.Full, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_URI or TYPE_TEXT_FLAG_NO_SUGGESTIONS, IME_ACTION_GO))
     }
 
     @Test fun privateAndLiteralFieldsStayLiteral() {

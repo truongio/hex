@@ -56,6 +56,7 @@ internal class KeyboardEngine(
     private var fieldTyping = FieldTyping.Literal
     private val ordinaryField get() = fieldTyping != FieldTyping.Literal
     private val autocorrecting get() = feedback.autocorrect && fieldTyping == FieldTyping.Full
+    private var urlField = false
     private var prefix = ""
     private var expectedCaret = -1
     private data class Undo(val language: String, val original: String, val replacement: String)
@@ -94,6 +95,7 @@ internal class KeyboardEngine(
             else -> false
         }
         fieldTyping = if (secure) FieldTyping.Literal else FieldTyping.of(attribute.inputType, attribute.imeOptions)
+        urlField = FieldKind.of(attribute.inputType) == FieldKind.Url
         resetTyping(); word = null; clearSpaces()
         pad = Pad.of(attribute.inputType)
         symbols = pad != null
@@ -365,7 +367,7 @@ internal class KeyboardEngine(
         if (mark && w != null && !symbols && canEndWord()) {
             val swap = w.textReplacement(text)
             if (swap != null && replace(swap.original, swap.replacement + value)) { resetTyping(); showPredictions(before()); inputDone(); return }
-            if (autocorrecting && w.token.isNotEmpty() && endsWith(prefix + w.token)) {
+            if (autocorrecting && !urlField && w.token.isNotEmpty() && endsWith(prefix + w.token)) {
                 val fix = w.finish(value[0])
                 if (fix != null && !feedback.blocked(w.decoder.model.language, fix.original, fix.replacement) &&
                     replace(fix.original, fix.replacement + value)) { resetTyping(); showPredictions(before()); inputDone(); return }
