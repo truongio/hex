@@ -10,10 +10,11 @@ lists. Mixed Swedish and English typing reads it from the English model instead,
 tells the keyboard which language a sentence is in.
 
 Google Books has no Swedish, so the counts come from running text instead:
-- Leipzig Corpora Collection swe_news_2022_1M, swe_news_2023_1M and swe_wikipedia_2021_1M
-  (CC BY 4.0, https://wortschatz.uni-leipzig.de), `<name>.tar.gz` in DOWNLOADS;
-- OPUS OpenSubtitles v2018 Swedish monolingual text (http://www.opensubtitles.org, via
-  https://opus.nlpl.eu), `opensubs-sv.txt.gz` in DOWNLOADS, for the everyday, spoken register
+- Leipzig Corpora Collection swe_news_2019_1M, swe_news_2020_1M, swe_news_2022_1M,
+  swe_news_2023_1M, swe_wikipedia_2016_1M, swe_wikipedia_2021_1M and swe-se_web_2019_1M
+  (https://wortschatz.uni-leipzig.de), `<name>.tar.gz` in DOWNLOADS;
+- OPUS OpenSubtitles v2024 Swedish monolingual text (http://www.opensubtitles.org, via
+  https://opus.nlpl.eu), `opensubs-2024-sv.txt.gz` in DOWNLOADS, for the everyday, spoken register
   a phone keyboard types;
 - LibreOffice's sv_SE Hunspell dictionary (Göran Andersson, LGPL 3), `sv_SE.dic` and `sv_SE.aff`
   in DOWNLOADS, which keeps typos, foreign words and tokenizer debris out of the model. Hunspell
@@ -31,12 +32,16 @@ import collections, importlib, math, multiprocessing, os, re, sys, tarfile, unic
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 builder = importlib.import_module("build-typing-model")
 
-LEIPZIG = ("swe_news_2022_1M", "swe_news_2023_1M", "swe_wikipedia_2021_1M")
-SUBTITLES = "opensubs-sv.txt.gz"
+LEIPZIG = ("swe_news_2019_1M", "swe_news_2020_1M", "swe_news_2022_1M", "swe_news_2023_1M", "swe_wikipedia_2016_1M",
+           "swe_wikipedia_2021_1M", "swe-se_web_2019_1M")
+SUBTITLES = "opensubs-2024-sv.txt.gz"
 LETTERS = "abcdefghijklmnopqrstuvwxyzåäöéü"
-MAX_WORDS = 100_000
+MAX_WORDS = 200_000
+MAX_BYTES = 7_000_000
 MIN_PAIR = 6
-VALID_MIN_COUNT = 4
+VALID_MIN_COUNT = 2
+ATTESTED, ATTESTED_EACH = 100, 20
+UNMARKED_RATIO = 10
 SINGLE_LETTERS = {"i", "å", "ö"}
 MIN_TOTAL, MODEL_SHARE, NAME_SHARE, NAME_PER_MILLION, HELD = 40, 50, 90, 1, 94
 TOKEN = re.compile(r"[^\W\d_]+|[^\w\s]+|[\d_]+")
@@ -57,7 +62,7 @@ def sources(downloads, work):
                         f.write(line.split(b"\t", 1)[-1])
             os.replace(path + ".part", path)
         out.append(path)
-    path = os.path.join(work, "opensubs.txt")
+    path = os.path.join(work, SUBTITLES.removesuffix(".gz"))
     if not os.path.exists(path):
         import gzip, shutil
         with gzip.open(os.path.join(downloads, SUBTITLES)) as src, open(path + ".part", "wb") as dst:
@@ -105,19 +110,22 @@ def words(line):
 
 
 def count_words(job):
-    uni, lower_mid, upper_mid = collections.Counter(), collections.Counter(), collections.Counter()
+    uni, lower_mid, upper_mid, spoken = collections.Counter(), collections.Counter(), collections.Counter(), collections.Counter()
+    subtitles = os.path.basename(job[0]) == SUBTITLES.removesuffix(".gz")
     for line in lines(job):
         for w, text, start in words(line):
             if w is None:
                 continue
             uni[w] += 1
+            if subtitles:
+                spoken[w] += 1
             if start:
                 continue
             if text == w:
                 lower_mid[w] += 1
             elif text[0].isupper() and text[1:] == w[1:]:
                 upper_mid[w] += 1
-    return uni, lower_mid, upper_mid
+    return uni, lower_mid, upper_mid, spoken
 
 
 VOCAB = {}
@@ -156,6 +164,10 @@ def check(batch):
     return out
 
 
+def fold(word):
+    return "".join(c for c in unicodedata.normalize("NFD", word) if not unicodedata.combining(c))
+
+
 def english_words(path):
     import struct
     data = open(path, "rb").read()
@@ -189,13 +201,13 @@ def main(downloads, work, assets):
 
     counts_path = os.path.join(work, "counts.tsv")
     if not os.path.exists(counts_path):
-        uni, low, up = collections.Counter(), collections.Counter(), collections.Counter()
+        uni, low, up, spoken = collections.Counter(), collections.Counter(), collections.Counter(), collections.Counter()
         with multiprocessing.Pool(workers) as pool:
-            for u, l, c in pool.imap_unordered(count_words, jobs):
-                uni.update(u); low.update(l); up.update(c)
+            for u, l, c, sp in pool.imap_unordered(count_words, jobs):
+                uni.update(u); low.update(l); up.update(c); spoken.update(sp)
         with open(counts_path + ".part", "w", encoding="utf-8") as f:
             for w in sorted(uni):
-                f.write(f"{w}\t{uni[w]}\t{low[w]}\t{up[w]}\n")
+                f.write(f"{w}\t{uni[w]}\t{low[w]}\t{up[w]}\t{spoken[w]}\n")
         os.replace(counts_path + ".part", counts_path)
     counts = read_counts(counts_path)
     total = sum(c[0] for c in counts.values())
@@ -211,6 +223,20 @@ def main(downloads, work, assets):
                 f.write(f"{w}\t{int(lowercase)}\n")
         os.replace(checked_path + ".part", checked_path)
     dictionary = {w: bool(int(l)) for w, (l,) in read_counts(checked_path).items()}
+    attested = {w for w, (n, low, up, spoken) in counts.items() if w not in dictionary and n >= ATTESTED and
+                min(spoken, n - spoken) >= ATTESTED_EACH and low >= up}
+    print(f"Attested outside the dictionary: {len(attested)}: {' '.join(sorted(attested, key=lambda w: -counts[w][0])[:60])}")
+    dictionary.update({w: True for w in attested})
+    english_all = english_words(os.path.join(assets, "en.hextm"))
+    dictionary = {w: l for w, l in dictionary.items() if not (w in attested and w in english_all)}
+    folded = collections.defaultdict(int)
+    for w in dictionary:
+        f = fold(w)
+        if f != w:
+            folded[f] = max(folded[f], counts[w][0])
+    unmarked = {w for w in attested if w in dictionary and fold(w) == w and folded.get(w, 0) >= UNMARKED_RATIO * counts[w][0]}
+    print(f"Missing their marks: {len(unmarked)}: {' '.join(sorted(unmarked, key=lambda w: -counts[w][0])[:60])}")
+    dictionary = {w: l for w, l in dictionary.items() if w not in unmarked}
     english = english_words(os.path.join(assets, "en.hextm"))
     quoted = {w for w in dictionary if english.get(w, 0) >= math.exp(-ENGLISH_COST) and
               english[w] > ENGLISH_RATIO * counts[w][0] / total}
@@ -245,6 +271,7 @@ def main(downloads, work, assets):
         pairs[k.encode("utf-8")] = int(c)
 
     builder.MIN_PAIR = MIN_PAIR
+    builder.MAX_BYTES = MAX_BYTES
     builder.write_model("sv", vocab, total, pairs, os.path.join(assets, "sv.hextm"))
     write_valid(os.path.join(assets, "sv.valid"), dictionary, vocab, counts, total)
     write_capitals(os.path.join(assets, "sv.capitals"), vocab, dictionary, counts, total)
@@ -265,7 +292,7 @@ def write_valid(path, dictionary, vocab, counts, total):
 
 def write_capitals(path, vocab, dictionary, counts, total):
     rows = []
-    for w, (n, low, up) in counts.items():
+    for w, (n, low, up, _) in counts.items():
         cased = low + up
         if cased < MIN_TOTAL or len(w) < 2:
             continue

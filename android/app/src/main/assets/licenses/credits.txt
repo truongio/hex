@@ -49,9 +49,10 @@ The Bokmål validity list (nb.valid) is the Norsk ordbank standard full forms ou
 that the same book counts use at least 1,000 times, with each word's count quantized to a cost.
 
 Swedish keyboard language model (sv.hextm), capitalization list (sv.capitals) and validity list
-(sv.valid): word and word-pair counts from the Leipzig Corpora Collection (swe_news_2022_1M,
-swe_news_2023_1M, swe_wikipedia_2021_1M), Universität Leipzig, https://wortschatz.uni-leipzig.de,
-and from the OpenSubtitles v2018 Swedish monolingual text (http://www.opensubtitles.org), as
+(sv.valid): word and word-pair counts from the Leipzig Corpora Collection (swe_news_2019_1M,
+swe_news_2020_1M, swe_news_2022_1M, swe_news_2023_1M, swe_wikipedia_2016_1M, swe_wikipedia_2021_1M,
+swe-se_web_2019_1M), Universität Leipzig, https://wortschatz.uni-leipzig.de,
+and from the OpenSubtitles v2024 Swedish monolingual text (http://www.opensubtitles.org), as
 distributed by OPUS (P. Lison and J. Tiedemann, 2016), https://opus.nlpl.eu/OpenSubtitles.php
 Spelling filter: the LibreOffice sv_SE Hunspell dictionary by Göran Andersson, GNU Lesser General
 Public License 3: https://www.gnu.org/licenses/lgpl-3.0.html

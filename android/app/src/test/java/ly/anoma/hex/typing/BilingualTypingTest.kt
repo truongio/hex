@@ -40,6 +40,8 @@ class BilingualTypingTest {
             "jsg vill ha kaffe " to "jag vill ha kaffe ", "hwj hur mar du " to "hej hur mår du ",
             "vi ses pa fredag " to "vi ses på fredag ", "det var jattebra " to "det var jättebra ",
             "jag bor i stockholm " to "jag bor i Stockholm ", "kaffekoppsfabriken " to "kaffekoppsfabriken ",
+            "vi ses i helgen " to "vi ses i helgen ", "det blir knappast bra " to "det blir knappast bra ",
+            "jag maste ga nu " to "jag måste gå nu ",
         )) assertEquals(typed, expected, swedish().typed(typed))
     }
 
