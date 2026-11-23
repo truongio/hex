@@ -36,3 +36,11 @@ https://github.com/LibreOffice/dictionaries/tree/master/sv_SE
 Changes: lowercased word and word-pair counts, filtered to spellings the dictionary accepts,
 left out words far commoner in English, selected informative pairs and quantized probabilities
 into HXTM v3. Build script: android/benchmark/typing/build-swedish-model.py.
+
+Parakeet speech model (optional download): NVIDIA Parakeet TDT 0.6B v3,
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3, Creative Commons Attribution 4.0
+International: cc-by-4.0.txt. Changes: int8 ONNX export by the sherpa-onnx project,
+https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+sherpa-onnx 2.0.2, Xiaomi Corporation and contributors, Apache License 2.0: apache-2.0.txt.
+https://github.com/k2-fsa/sherpa-onnx
+ONNX Runtime, Microsoft Corporation, MIT License: onnxruntime.txt. https://github.com/microsoft/onnxruntime

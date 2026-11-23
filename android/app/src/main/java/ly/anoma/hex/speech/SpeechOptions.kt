@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Resources
 
 internal enum class Style { Polished, Casual, Notes, Verbatim }
+internal enum class Engine { Whisper, Parakeet }
 /** A keyboard layout's language: its keys, accents and typing model. Dictation languages are
  * [DictationLanguage]; a language can be dictated without a layout of its own. */
 internal enum class Spoken(val code: String, val label: String) {
@@ -33,7 +34,7 @@ internal enum class DictationLanguage(val code: String, val label: String, val l
 internal data class SpeechOptions(val style: Style, val spoken: DictationLanguage, val clean: Boolean, val translate: Boolean,
                                    val lowercase: Boolean = false, val endWithPeriod: Boolean = true,
                                    val formatLists: Boolean = false, val spokenPunctuation: Boolean = false,
-                                   val vocabulary: List<String> = emptyList())
+                                   val vocabulary: List<String> = emptyList(), val engine: Engine = Engine.Whisper)
 internal class SpeechPreferences(context: Context) {
     private val prefs = context.getSharedPreferences("speech", Context.MODE_PRIVATE)
     var style: Style
@@ -78,7 +79,11 @@ internal class SpeechPreferences(context: Context) {
     var vocabularyTerms: List<String>
         get() = prefs.getString("vocabularyTerms", null)?.split('\n').orEmpty().filter(String::isNotEmpty)
         set(value) { prefs.edit().putString("vocabularyTerms", VocabularySpelling.sanitize(value).joinToString("\n")).apply() }
+    // Dictation › Parakeet: the faster engine, once its model is on the phone.
+    var engine: Engine
+        get() = Engine.entries.firstOrNull { it.name == prefs.getString("engine", null) } ?: Engine.Whisper
+        set(value) { prefs.edit().putString("engine", value.name).apply() }
     fun options(nextEnglish: Boolean?) = SpeechOptions(style, spoken, clean,
         translation && spoken != DictationLanguage.English && (nextEnglish ?: true), lowercase, endWithPeriod, formatLists, spokenPunctuation,
-        if (customVocabulary) vocabularyTerms else emptyList())
+        if (customVocabulary) vocabularyTerms else emptyList(), engine)
 }

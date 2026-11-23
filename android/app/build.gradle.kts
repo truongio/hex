@@ -45,6 +45,36 @@ val prepareSpeechModel by tasks.registering {
     }
 }
 
+// sherpa-onnx with ONNX Runtime linked in (Apache 2.0 / MIT), the Parakeet engine's runtime.
+val sherpaAar = layout.buildDirectory.file("generated/sherpa/sherpa-onnx-static-link-onnxruntime-2.0.2.aar")
+val prepareSherpa by tasks.registering {
+    val aarUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.2/sherpa-onnx-static-link-onnxruntime-2.0.2.aar"
+    val aarSha256 = "cb73564809268c8b96bf98f1a32b0b3b611e01d028d22f10beb57ef55418c0cb"
+    inputs.property("url", aarUrl)
+    inputs.property("sha256", aarSha256)
+    outputs.file(sherpaAar)
+    doLast {
+        val file = sherpaAar.get().asFile
+        file.parentFile.mkdirs()
+        val part = Files.createTempFile(file.parentFile.toPath(), "sherpa", ".part")
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            URI(aarUrl).toURL().openConnection().apply {
+                connectTimeout = 30_000
+                readTimeout = 120_000
+            }.getInputStream().use { stream ->
+                DigestInputStream(stream, digest).use { input ->
+                    Files.newOutputStream(part).use { output -> input.copyTo(output) }
+                }
+            }
+            check(digest.digest().joinToString("") { "%02x".format(it) } == aarSha256) { "sherpa-onnx checksum mismatch" }
+            Files.move(part, file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        } finally {
+            Files.deleteIfExists(part)
+        }
+    }
+}
+
 // Resolve the key relative to its private properties file, never to a checked-in path.
 val uploadProperties = providers.environmentVariable("HEX_ANDROID_KEYSTORE_PROPERTIES").orNull
     ?.let(::file) ?: File(System.getProperty("user.home"), ".config/hex-android/keystore.properties")
@@ -146,5 +176,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     // The keyboard's emoji panel (Apache 2.0): categories, recents and skin tones, all kept on the device.
     implementation("androidx.emoji2:emoji2-emojipicker:1.7.0")
+    implementation(files(sherpaAar).builtBy(prepareSherpa))
     testImplementation("junit:junit:4.13.2")
 }

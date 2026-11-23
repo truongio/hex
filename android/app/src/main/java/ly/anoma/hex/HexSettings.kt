@@ -67,7 +67,7 @@ private fun licenceFiles(context: Context) =
 
 @Composable
 internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: TypingPreferences,
-                         model: ModelStore.State, download: () -> Unit, phase: SpeechPhase, transcript: String,
+                         model: ModelStore.State, download: () -> Unit, parakeet: ModelStore.State, downloadParakeet: () -> Unit, phase: SpeechPhase, transcript: String,
                          notice: String?, dictate: () -> Unit, cancel: () -> Unit, clear: () -> Unit, setupPage: (Int) -> Unit,
                          systemSettings: () -> Unit) {
     var page by rememberSaveable { mutableStateOf(Page.Home) }
@@ -96,6 +96,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val formatLists = remember(revision) { speech.formatLists }
     val spokenPunctuation = remember(revision) { speech.spokenPunctuation }
     val customVocabulary = remember(revision) { speech.customVocabulary }
+    val engine = remember(revision) { speech.engine }
     var vocabularyDraft by remember { mutableStateOf(speech.vocabularyTerms.joinToString("\n")) }
     val autoCapitalize = remember(revision) { typing.autoCapitalize }
     val autocorrect = remember(revision) { typing.autocorrect }
@@ -223,6 +224,16 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                             val action = modelAction(model)
                             Entry(stringResource(R.string.model_title), modelStatus(model), action?.let { stringResource(it) } ?: "",
                                 if (action != null) download else null)
+                            Rule(); Toggle(stringResource(R.string.parakeet_title), stringResource(R.string.parakeet_detail),
+                                engine == Engine.Parakeet) {
+                                speech.engine = if (it) Engine.Parakeet else Engine.Whisper
+                                if (it && parakeet != ModelStore.State.Ready) downloadParakeet()
+                            }
+                            if (engine == Engine.Parakeet) {
+                                val parakeetAction = modelAction(parakeet)
+                                Rule(); Entry(stringResource(R.string.parakeet_model_title), parakeetStatus(parakeet),
+                                    parakeetAction?.let { stringResource(it) } ?: "", if (parakeetAction != null) downloadParakeet else null)
+                            }
                         }
                     }
                     Page.Keyboard -> {

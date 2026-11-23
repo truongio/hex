@@ -42,6 +42,14 @@
     <string name="model_loading">Downloading · %1$d%%</string>
     <string name="model_download">Download</string>
     <string name="model_try_again">Try again</string>
+    <string name="parakeet_title">Parakeet</string>
+    <string name="parakeet_detail">NVIDIA’s faster speech model, a 671 MB download. Paste in English still uses Whisper.</string>
+    <string name="parakeet_model_title">Parakeet model</string>
+    <string name="parakeet_ready">Parakeet TDT 0.6B v3, on this phone</string>
+    <string name="parakeet_available">Not downloaded. Dictation uses Whisper.</string>
+    <string name="parakeet_stopped">Download stopped. Dictation uses Whisper.</string>
+    <string name="parakeet_no_connection">No connection. Dictation uses Whisper.</string>
+    <string name="parakeet_no_space">Not enough storage. Dictation uses Whisper.</string>
 
     <!-- Home -->
     <string name="home_ready">Ready</string>

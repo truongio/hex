@@ -3,6 +3,9 @@
     native <methods>;
 }
 
+# sherpa-onnx's JNI reads its config objects' fields by name.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+
 # Drop diagnostic calls from managed release code, including dependencies.
 -assumenosideeffects class android.util.Log {
     public static boolean isLoggable(java.lang.String, int) return false;

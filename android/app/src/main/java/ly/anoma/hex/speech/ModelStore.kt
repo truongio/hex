@@ -16,11 +16,22 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import javax.net.ssl.HttpsURLConnection
 
-/** The only network operation in Hex: an explicit, fixed model GET from setup or Dictation settings. */
-internal object ModelStore {
-    private const val size = 190085487L
-    private const val hash = "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"
-    private const val url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q5_1.bin"
+/** One file of a speech model: where it comes from and the exact bytes it must have. */
+internal class ModelFile(val name: String, val url: String, val size: Long, val hash: String)
+
+/** The only network operations in Hex: explicit, fixed model GETs from setup or Dictation settings. */
+internal class ModelStore private constructor(private val folder: String, private val files: List<ModelFile>) {
+    companion object {
+        private const val parakeetRepo = "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/ed5d745623472f97cfc2e6c2916ee248798fc5a8"
+        val whisper = ModelStore("", listOf(ModelFile("whisper-small-ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb.bin",
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q5_1.bin",
+            190085487L, "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb")))
+        val parakeet = ModelStore("parakeet-tdt-0.6b-v3-int8-ed5d745", listOf(
+            ModelFile("tokens.txt", "$parakeetRepo/tokens.txt", 93939L, "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"),
+            ModelFile("decoder.int8.onnx", "$parakeetRepo/decoder.int8.onnx", 11845274L, "0222a86147299d4dee90edf95b6d13827edb42ad8b7c9cf0b2582f030937c0b5"),
+            ModelFile("joiner.int8.onnx", "$parakeetRepo/joiner.int8.onnx", 6355277L, "cbd02f3696e9944970111fb439d9c3fd365a80374565f13f2b9c7007d253fc98"),
+            ModelFile("encoder.int8.onnx", "$parakeetRepo/encoder.int8.onnx", 652282294L, "1afbe69c1ffdabee94755f42e4daf1d93549131a3da11356bda84fcef0f2c479")))
+    }
 
     enum class Problem { Connection, Server, Space }
     sealed interface State {
@@ -32,14 +43,21 @@ internal object ModelStore {
     private class Failure(val problem: Problem) : Exception()
     private val progress = MutableStateFlow<State>(State.Available)
     val state = progress.asStateFlow()
+    private val size = files.sumOf { it.size }
     private var running = false
     private var waiting = false
     private var watching = false
     private var started = 0
     private var stops = 0
-    private fun path(context: Context) = File(context.noBackupFilesDir, "whisper-small-$hash.bin")
-    private fun part(context: Context) = File(context.noBackupFilesDir, "whisper-small-$hash.part")
-    fun installed(context: Context) = path(context).takeIf { it.isFile && it.length() == size }
+    private fun dir(context: Context) = if (folder.isEmpty()) context.noBackupFilesDir else File(context.noBackupFilesDir, folder)
+    private fun path(context: Context, file: ModelFile) = File(dir(context), file.name)
+    private fun part(context: Context, file: ModelFile) = File(dir(context), file.name.substringBeforeLast('.') + ".part")
+    private fun done(context: Context, file: ModelFile) = path(context, file).let { it.isFile && it.length() == file.size }
+    private fun partial(context: Context) = files.any { part(context, it).exists() || done(context, it) }
+    private fun have(context: Context) = files.sumOf { if (done(context, it)) it.size else part(context, it).length().coerceIn(0, it.size) }
+    /** The model's folder (or its single file) once every file is in place. */
+    fun installed(context: Context): File? =
+        if (files.all { done(context, it) }) (if (files.size == 1) path(context, files[0]) else dir(context)) else null
 
     @Synchronized fun refresh(context: Context) {
         val app = context.applicationContext as Application
@@ -52,7 +70,7 @@ internal object ModelStore {
     private val foreground = object : Application.ActivityLifecycleCallbacks {
         override fun onActivityStarted(activity: Activity) {
             synchronized(this@ModelStore) {
-                if (started++ == 0 && !running && (waiting || part(activity).exists()) && installed(activity) == null) download(activity)
+                if (started++ == 0 && !running && (waiting || partial(activity)) && installed(activity) == null) download(activity)
             }
         }
         override fun onActivityStopped(activity: Activity) { synchronized(this@ModelStore) { if (--started == 0) stops++ } }
@@ -68,14 +86,14 @@ internal object ModelStore {
         if (installed(app) != null) { progress.value = State.Ready; return }
         if (running) return
         running = true; waiting = false
-        val part = part(app)
-        progress.value = State.Loading((part.length().coerceIn(0, size) * 100 / size).toInt().coerceAtMost(99))
+        progress.value = State.Loading((have(app) * 100 / size).toInt().coerceAtMost(99))
         val since = stops
         Thread({
             val result = try {
-                val resumed = part.length() > 0
+                dir(app).mkdirs()
                 // A resumed file that fails the checksum is discarded and fetched once more from the start.
-                if (transfer(app, part) || resumed && transfer(app, part)) State.Ready else State.Retry(Problem.Server)
+                if (files.all { done(app, it) || part(app, it).length() > 0 && transfer(app, it) || transfer(app, it) })
+                    State.Ready else State.Retry(Problem.Server)
             } catch (e: Failure) { State.Retry(e.problem) }
             catch (_: IOException) { State.Retry(if (app.noBackupFilesDir.usableSpace < 8_000_000) Problem.Space else Problem.Connection) }
             catch (_: Exception) { State.Retry(Problem.Server) }
@@ -90,17 +108,20 @@ internal object ModelStore {
     }
 
     /** Returns false, after deleting the partial file, when the finished file fails the checksum. */
-    private fun transfer(app: Context, part: File): Boolean {
+    private fun transfer(app: Context, file: ModelFile): Boolean {
+        val part = part(app, file)
+        val size = file.size
         if (part.length() > size) part.delete()
-        if (app.noBackupFilesDir.usableSpace <= size - part.length() + 8_000_000) throw Failure(Problem.Space)
+        if (app.noBackupFilesDir.usableSpace <= this.size - have(app) + 8_000_000) throw Failure(Problem.Space)
         val digest = MessageDigest.getInstance("SHA-256")
         var total = part.length()
         if (total > 0) part.inputStream().use { input -> pump(input) { buffer, count -> digest.update(buffer, 0, count) } }
-        var http = open(total)
-        if (total > 0 && if (http == null) total < size else http.responseCode == 206 && !resumes(http, total)) {
+        var http = open(file.url, total)
+        if (total > 0 && if (http == null) total < size else http.responseCode == 206 && !resumes(http, total, size)) {
             http?.disconnect(); part.delete(); total = 0; digest.reset()
-            http = open(0) ?: throw Failure(Problem.Server)
+            http = open(file.url, 0) ?: throw Failure(Problem.Server)
         }
+        val before = have(app) - total
         if (http != null) try {
             if (http.responseCode == 200) { total = 0; digest.reset() }
             http.inputStream.use { input ->
@@ -109,15 +130,15 @@ internal object ModelStore {
                         total += count
                         if (total > size) throw Failure(Problem.Server)
                         digest.update(buffer, 0, count); output.write(buffer, 0, count)
-                        progress.value = State.Loading((total * 100 / size).toInt().coerceAtMost(99))
+                        progress.value = State.Loading(((before + total) * 100 / this.size).toInt().coerceAtMost(99))
                     }
                     output.fd.sync()
                 }
             }
         } finally { http.disconnect() }
         if (total < size) throw IOException("Model download ended early")
-        if (digest.digest().joinToString("") { "%02x".format(it) } != hash) { part.delete(); return false }
-        Files.move(part.toPath(), path(app).toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        if (digest.digest().joinToString("") { "%02x".format(it) } != file.hash) { part.delete(); return false }
+        Files.move(part.toPath(), path(app, file).toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         return true
     }
 
@@ -130,11 +151,11 @@ internal object ModelStore {
         }
     }
 
-    private fun resumes(http: HttpsURLConnection, from: Long) =
+    private fun resumes(http: HttpsURLConnection, from: Long, size: Long) =
         http.getHeaderField("Content-Range") == "bytes $from-${size - 1}/$size"
 
     /** Opens the model at [from] bytes; null when the server says nothing is left to send. */
-    private fun open(from: Long): HttpsURLConnection? {
+    private fun open(url: String, from: Long): HttpsURLConnection? {
         var target = URL(url)
         repeat(6) {
             val host = target.host.lowercase()

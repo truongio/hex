@@ -77,18 +77,20 @@ class MainActivity : ComponentActivity() {
         for (name in listOf(Settings.Secure.DEFAULT_INPUT_METHOD, Settings.Secure.ENABLED_INPUT_METHODS))
             contentResolver.registerContentObserver(Settings.Secure.getUriFor(name), false, changed)
         refresh()
-        ModelStore.refresh(this)
+        ModelStore.whisper.refresh(this); ModelStore.parakeet.refresh(this)
         setContent {
             HexTheme {
                 BackHandler(page in 1..2) { go(page - 1) }
-                val model = ModelStore.state.collectAsState().value
-                if (page == 3) HexSettings(setup, speech, typing, model, { ModelStore.download(this) },
+                val model = ModelStore.whisper.state.collectAsState().value
+                val parakeet = ModelStore.parakeet.state.collectAsState().value
+                if (page == 3) HexSettings(setup, speech, typing, model, { ModelStore.whisper.download(this) },
+                    parakeet, { ModelStore.parakeet.download(this) },
                     phase, transcript, notice, ::dictate, capture::cancel, { transcript = "" }, { go(it) },
                     { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) })
                 else SetupScreen(page, setup, ::go, ::askForMic,
                     enable = { enabling = true; startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                     choose = { imm.showInputMethodPicker() }, model = model,
-                    download = { ModelStore.download(this) })
+                    download = { ModelStore.whisper.download(this) })
             }
         }
     }
@@ -296,6 +298,16 @@ private fun SetupRow(title: String, note: String, ready: Boolean, action: String
         ModelStore.Problem.Connection -> R.string.model_no_connection
         ModelStore.Problem.Space -> R.string.model_no_space
         ModelStore.Problem.Server -> R.string.model_stopped
+    })
+    is ModelStore.State.Loading -> stringResource(R.string.model_loading, state.percent)
+}
+@Composable internal fun parakeetStatus(state: ModelStore.State) = when (state) {
+    ModelStore.State.Ready -> stringResource(R.string.parakeet_ready)
+    ModelStore.State.Available -> stringResource(R.string.parakeet_available)
+    is ModelStore.State.Retry -> stringResource(when (state.problem) {
+        ModelStore.Problem.Connection -> R.string.parakeet_no_connection
+        ModelStore.Problem.Space -> R.string.parakeet_no_space
+        ModelStore.Problem.Server -> R.string.parakeet_stopped
     })
     is ModelStore.State.Loading -> stringResource(R.string.model_loading, state.percent)
 }

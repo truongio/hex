@@ -49,6 +49,7 @@ internal class MicCapture(
         val ticket = Ticket(options)
         active = ticket
         publish(SpeechPhase.Opening)
+        recognizer.prepare(options)
         recorder.execute {
             try {
                 record(ticket)
@@ -124,8 +125,7 @@ internal class MicCapture(
             try {
                 if (ticket.cancelled) return@execute
                 val options = ticket.options
-                val raw = recognizer.decode(pcm, count, options.spoken.code, options.translate,
-                    options.vocabulary.takeIf { it.isNotEmpty() }?.joinToString(", "))
+                val raw = recognizer.decode(pcm, count, options)
                 if (ticket.cancelled) return@execute
                 when (val text = raw?.let { SpokenText.format(it, options) }) {
                     null -> complete(ticket, "Couldn’t transcribe. Try again.")
