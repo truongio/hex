@@ -642,8 +642,11 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
                 if (swipeX.isNaN() || feedback.choosing) return false
                 val dx = swipeX - e.x
                 if (e.eventTime - swipeAt > SWIPE_MS) { swipeX = Float.NaN; return false }
-                if (dx > width * SWIPE_SHARE && dx > 2 * kotlin.math.abs(e.y - swipeY)) {
-                    swipeOrigin = swipeX; swipeX = Float.NaN; swiped = true
+                val elapsed = maxOf(1L, e.eventTime - swipeAt)
+                val flick = kotlin.math.abs(dx) > width * FLICK_SHARE && kotlin.math.abs(dx) / density / elapsed > FLICK_SPEED &&
+                    kotlin.math.abs(dx) > 2 * kotlin.math.abs(e.y - swipeY)
+                if (((flick && dx > 0) || dx > width * SWIPE_SHARE) && dx > 2 * kotlin.math.abs(e.y - swipeY)) {
+                    swipeOrigin = maxOf(swipeX, e.x + width * SWIPE_SHARE); swipeX = Float.NaN; swiped = true
                     clearCallout(); endSlide()
                     swipeSlide = ime.engine.deleteSlide()
                     swipeWords = 0
@@ -789,6 +792,8 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         const val NUMBER_ROW_SHARE = .8f
         const val PERIOD_TAP_MS = 140L
         const val SWIPE_SHARE = .35f
+        const val FLICK_SHARE = .12f
+        const val FLICK_SPEED = .9f
         const val SWIPE_MS = 450L
     }
 }
