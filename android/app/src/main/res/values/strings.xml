@@ -107,7 +107,11 @@
     <string name="settings_learn_detail">Your words, phrases, tap pattern and kept corrections, on this phone only</string>
     <string name="settings_learned_words">What Hex learned</string>
     <string name="settings_learned_words_detail">%1$d new words, plus your phrases and tap pattern</string>
-    <string name="settings_learned_words_clear">Clear all</string>
+    <string name="settings_learned_words_clear">Clear all…</string>
+    <string name="settings_clear_title">Clear what Hex learned?</string>
+    <string name="settings_clear_detail">Your learned words, phrases, tap pattern and kept corrections are deleted from this phone. This can\'t be undone.</string>
+    <string name="settings_clear_confirm">Clear</string>
+    <string name="settings_clear_cancel">Cancel</string>
     <string name="settings_period_hold">Period key delay</string>
     <string name="settings_period_hold_detail">How long to hold the period key for punctuation; a quick tap still types a period</string>
     <string name="settings_hold_delay">Long-press delay</string>

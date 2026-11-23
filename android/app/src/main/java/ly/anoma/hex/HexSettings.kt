@@ -110,6 +110,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val symbolHolds = remember(revision) { typing.symbolHolds }
     val learned = remember(revision) { typing.learnedWords.size }
     val learn = remember(revision) { typing.learn }
+    var confirmClear by remember { mutableStateOf(false) }
     val holdMs = remember(revision) { typing.holdMs }
     val periodHoldMs = remember(revision) { typing.periodHoldMs }
     val popups = remember(revision) { typing.popups }
@@ -255,7 +256,15 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                                 "$periodHoldMs ms", { typing.periodHoldMs = periodHoldMs - 20 }, { typing.periodHoldMs = periodHoldMs + 20 })
                             Rule(); Toggle(stringResource(R.string.settings_learn), stringResource(R.string.settings_learn_detail), learn) { typing.learn = it }
                             Rule(); Entry(stringResource(R.string.settings_learned_words), stringResource(R.string.settings_learned_words_detail, learned),
-                                stringResource(R.string.settings_learned_words_clear), { typing.clearLearned() })
+                                stringResource(R.string.settings_learned_words_clear), { confirmClear = true })
+                            if (confirmClear) androidx.compose.material3.AlertDialog(
+                                onDismissRequest = { confirmClear = false },
+                                title = { Label(stringResource(R.string.settings_clear_title), size = 18, weight = FontWeight.SemiBold) },
+                                text = { Label(stringResource(R.string.settings_clear_detail), muted = true, size = 14, lines = Int.MAX_VALUE) },
+                                confirmButton = { androidx.compose.material3.TextButton({ confirmClear = false; typing.clearLearned() }) {
+                                    Label(stringResource(R.string.settings_clear_confirm), weight = FontWeight.SemiBold) } },
+                                dismissButton = { androidx.compose.material3.TextButton({ confirmClear = false }) {
+                                    Label(stringResource(R.string.settings_clear_cancel)) } })
                             Rule(); Toggle(stringResource(R.string.settings_popups), stringResource(R.string.settings_popups_detail), popups) { typing.popups = it }
                             Rule(); Toggle(stringResource(R.string.settings_haptics), stringResource(R.string.settings_haptics_detail), haptics) { typing.haptics = it }
                         }
