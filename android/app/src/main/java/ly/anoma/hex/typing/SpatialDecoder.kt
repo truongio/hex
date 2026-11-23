@@ -24,6 +24,13 @@ internal class KeyGrid(val centres: Map<Char, KeyPoint>, val pitchX: Double, val
 internal class SpatialDecoder(val model: TypingModel) {
     /** Your own words (`PersonalWords`), read beside the model's; null or empty without any. */
     @Volatile var personal: PersonalWords? = null
+    @Volatile var learning: Learning? = null
+    private fun lm(previous: Int, word: Int): Double {
+        val base = model.languageCost(previous, word)
+        val history = learning?.takeIf { it.enabled }?.history ?: return base
+        if (history.weight() == 0.0) return base
+        return history.blend(base, if (previous >= 0) model.text(previous) else null, model.text(word))
+    }
     /** `spaceCost`: what reading this tap as a space the finger missed costs when it landed on
      * the bottom row's upper half, or infinity (`spaceTapCost`). */
     class Tap(val cost: DoubleArray, val choices: IntArray, val belowLetters: Boolean, val missedSpaceCost: Double,
@@ -36,9 +43,11 @@ internal class SpatialDecoder(val model: TypingModel) {
     fun score(grid: KeyGrid, x: Double, y: Double): Tap {
         val costs = DoubleArray(model.alphabet + 1) { Double.POSITIVE_INFINITY }
         val sy = grid.verticalSpread
-        for ((c, p) in grid.centres) {
+        val touch = learning?.takeIf { it.enabled }?.touch
+        for ((c, centre) in grid.centres) {
             val code = model.code(c)
             if (code == 0) continue
+            val p = touch?.shifted(c, centre, grid) ?: centre
             val dx = (x - p.x) / (grid.pitchX * .29)
             val dy = (y - p.y) / sy
             costs[code] = .5 * (dx * dx + dy * dy)
@@ -192,7 +201,7 @@ internal class SpatialDecoder(val model: TypingModel) {
         // A rare word the books use, outside the model: what it costs by its count, not a known word's.
         val listed = if (literal < 0 && yours < 0) model.validCost(typed) else null
         var lm = when {
-            literal >= 0 -> model.languageCost(previous, literal)
+            literal >= 0 -> lm(previous, literal)
             listed != null -> listed
             knownLiteral -> 15.0
             else -> 22.0
@@ -205,7 +214,7 @@ internal class SpatialDecoder(val model: TypingModel) {
         val readings = ArrayList<Reading>()
         // iOS applies the language score only to the five best spatial readings.
         for ((w, spatial) in search(taps, 0, taps.size, 1, swears, previous).sortedWith(spatialOrder).take(5)) if (w != literal)
-            readings.add(Reading(model.text(w), spatial + lmWeight * model.languageCost(previous, w), model.frequencyCost(w)))
+            readings.add(Reading(model.text(w), spatial + lmWeight * lm(previous, w), model.frequencyCost(w)))
         if (personal != null) for ((w, spatial) in search(taps, 0, taps.size, 1, swears, previous, personal).sortedWith(spatialOrder).take(3))
             if (w != yours) readings.add(Reading(personal.text(w), spatial + lmWeight * USER_WORD_COST, (USER_WORD_COST * 8).toInt()))
         if (taps.size >= 3) {
@@ -225,8 +234,8 @@ internal class SpatialDecoder(val model: TypingModel) {
             fun pair(left: List<Found>, right: List<Found>, extra: Double) {
                 for (l in left) for (r in right) {
                     if (model.neverSuggest.blocksFollowing(r.word, swears, l.word)) continue
-                    val lm = model.languageCost(previous, l.word) + model.languageCost(l.word, r.word)
-                    readings.add(Reading(model.text(l.word) + " " + model.text(r.word), l.cost + r.cost + extra + lmWeight * lm,
+                    val pairCost = lm(previous, l.word) + lm(l.word, r.word)
+                    readings.add(Reading(model.text(l.word) + " " + model.text(r.word), l.cost + r.cost + extra + lmWeight * pairCost,
                         model.frequencyCost(l.word) + model.frequencyCost(r.word)))
                 }
             }

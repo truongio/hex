@@ -22,6 +22,10 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
     private var previous = -1
     private var otherPrevious = -1
     private val otherTaps = ArrayList<SpatialDecoder.Tap>()
+    private val points = ArrayList<KeyPoint>()
+    private var pointGrid: KeyGrid? = null
+    private val learning get() = decoder.learning?.takeIf { it.enabled && learns }
+    var learns = true
     private var switchCost = 0.0
     private var otherSwitchCost = SWITCH
     private var literalOnly = false
@@ -49,7 +53,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
     /** Starts a word after `before`. The word a space just finished stays revisable only when
      * `before` is still the text it left; an empty `before` keeps it for the next call. */
     fun reset(before: String = "") {
-        token = ""; taps.clear(); otherTaps.clear(); decision = null; literalOnly = false
+        token = ""; taps.clear(); otherTaps.clear(); points.clear(); decision = null; literalOnly = false
         this.before = before
         previousText = previousWord(before).takeIf { it.isNotEmpty() }
         previous = model.context(previousText.orEmpty())
@@ -81,7 +85,8 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
                 val previous = finished.lowercase()
                 val m = other?.model?.takeIf { inModel(it, previous) && !knownHere(previous) } ?: model
                 val index = m.context(previous)
-                val next = if (index >= 0) m.nextWords(index, suggestSwearWords, fill = false) else emptyList()
+                val learned = learning?.history?.next(previous, 2).orEmpty()
+                val next = learned + if (index >= 0) m.nextWords(index, suggestSwearWords, fill = false) else emptyList()
                 (next + commonWords[m.language].orEmpty()).filter {
                     it.lowercase() != previous && !m.neverSuggest.blocks(it.lowercase(), suggestSwearWords, index)
                 }
@@ -156,8 +161,19 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
             return ids.map { m.text(it) to m.frequencyCost(it) + switch * 8 }
         }
         val here = of(decoder, previous, switchCost)
-        val second = other ?: return here.map { it.first }
-        return (here + of(second, otherPrevious, otherSwitchCost)).sortedBy { it.second }.map { it.first }.distinct()
+        val history = learning?.history?.takeIf { it.weight() > 0.0 }
+        val second = other
+        if (second == null && history == null) return here.map { it.first }
+        val all = here + (second?.let { of(it, otherPrevious, otherSwitchCost) } ?: emptyList()) +
+            (history?.completions(prefix, 3)?.map { it to Double.MAX_VALUE } ?: emptyList())
+        if (history == null) return all.sortedBy { it.second }.map { it.first }.distinct()
+        val seen = HashMap<String, Double>()
+        for ((w, eighths) in all) {
+            val base = if (eighths == Double.MAX_VALUE) NEVER_SEEN else eighths / 8.0
+            val cost = history.blend(base, if (short) previousText else null, w)
+            seen[w] = minOf(seen[w] ?: Double.MAX_VALUE, cost)
+        }
+        return seen.entries.sortedBy { it.value }.map { it.key }
     }
 
     // A candidate cased as the word was typed, with the capital the strip shows for names.
@@ -167,15 +183,17 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         if (spatial && !literalOnly && taps.size < MAX_LENGTH) {
             taps.add(decoder.score(grid, x, y))
             other?.let { otherTaps.add(it.score(grid, x, y)) }
+            points.add(KeyPoint(x, y)); pointGrid = grid
         }
     }
     fun explicit(text: String) {
-        token += text; taps.clear(); otherTaps.clear(); decision = null; literalOnly = true
+        token += text; taps.clear(); otherTaps.clear(); points.clear(); decision = null; literalOnly = true
     }
     fun pop() {
         if (token.isEmpty()) return
         if (taps.size == token.length) taps.removeAt(taps.lastIndex)
         if (otherTaps.size == token.length) otherTaps.removeAt(otherTaps.lastIndex)
+        if (points.size == token.length) points.removeAt(points.lastIndex)
         token = token.dropLast(1); decision = null
     }
     private fun decision() = decision ?: run {
@@ -285,6 +303,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         // A word the same letters spell with an apostrophe or an accent, or one that sounds alike,
         // chosen by the word before when it says so clearly ("yes id" -> "yes I'd", "the id" stays).
         val second = otherOnly(lower)
+        if (!allCaps && !knows(lower)) learning?.corrections?.learned(lower)?.takeUnless(::blocked)?.let { return cased(it) }
         if (!allCaps && '\'' !in token) (ContextWords.choice(model, token, previousText, null, sentenceStart)
             ?: second?.let { ContextWords.choice(it, token, previousText, null, sentenceStart) })
             ?.takeUnless(::blocked)?.let { return it }
@@ -345,7 +364,23 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
                 result = Correction((if (revised != null) word!!.text + " " else "") + token, (revised?.let { "$it " } ?: "") + now)
         }
         if (ending == ' ') remember(result, space, grid)
+        learn(result)
         return result
+    }
+
+    private fun learn(result: Correction?) {
+        val l = learning ?: return
+        val final = result?.replacement ?: token
+        val word = final.substringAfterLast(' ')
+        if (word.isEmpty() || word.any { !it.isLetter() && it != '\'' }) return
+        val lower = word.lowercase()
+        val prior = (if (result != null && ' ' in result.replacement) final.substringBeforeLast(' ').substringAfterLast(' ') else previousText)
+            ?.lowercase()?.takeIf { it.isNotEmpty() && it.all { c -> c.isLetter() || c == '\'' } }
+        l.history.note(prior, lower)
+        val grid = pointGrid
+        if (grid != null && ' ' !in final && points.size == token.length && lower.length == token.length)
+            for (i in lower.indices) l.touch.note(lower[i], points[i].x, points[i].y, grid)
+        l.changed()
     }
 
     // The word before, revised now that `next` follows it, or null: words the context decides
@@ -405,6 +440,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         const val ODDS_PER_DP = .8
         const val SWITCH = 2.5
         const val COMMON_COST = 104
+        private const val NEVER_SEEN = 18.0
         private const val CONTEXT_WORDS = 3
         // Words the strip offers in place of these, but space never puts in: each is a word too.
         private val suggestOnly = mapOf("ill" to "I'll", "id" to "I'd", "were" to "we're", "wed" to "we'd",

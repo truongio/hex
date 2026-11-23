@@ -699,6 +699,9 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
     /** The letter a touch types: its own key's, or a neighbour's the word list makes likelier when the
      * touch is within TypingWord.REACH dp of that neighbour's touch area (never from a key's centre). */
     private fun likelier(c: Char, text: String, touch: KeyPoint): String {
+        val g = geometry()
+        val adapted = if (g != null) ime.engine.adaptedKey(c, touch, g) else c
+        if (adapted != c) return (if (text.single().isUpperCase()) adapted.uppercaseChar() else adapted).toString()
         val near = HashMap<Char, Double>()
         for ((other, cap) in letters) {
             if (other == c) continue

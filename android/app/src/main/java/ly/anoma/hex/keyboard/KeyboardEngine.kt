@@ -11,6 +11,7 @@ import ly.anoma.hex.speech.Spoken
 import ly.anoma.hex.speech.SpokenText
 import ly.anoma.hex.typing.KeyGrid
 import ly.anoma.hex.typing.KeyPoint
+import ly.anoma.hex.typing.Learning
 import ly.anoma.hex.typing.PersonalWords
 import ly.anoma.hex.typing.SpatialDecoder
 import ly.anoma.hex.typing.Suggestion
@@ -41,6 +42,7 @@ internal class KeyboardEngine(
     private val clock: () -> Long = { SystemClock.uptimeMillis() },
     private val main: Handler = Handler(Looper.getMainLooper()),
     private val emails: () -> List<String> = { emptyList() },
+    private val learning: Learning? = null,
 ) {
     private companion object {
         /** The fix and the decoder's readings wait for this pause in typing: working them out costs a
@@ -182,7 +184,17 @@ internal class KeyboardEngine(
     fun pad(next: Pad) { resetTyping(); clearSpaces(); surface?.suggestions(emptyList()); pad = next; symbols = true; more = false; showPlane() }
     /** The symbol pad's !?#: back to the symbol page. */
     fun symbolsPage() { resetTyping(); pad = null; symbols = true; more = false; showPlane() }
+    private fun blocked(language: String, original: String, replacement: String): Boolean {
+        val undos = feedback.undos(language, original, replacement)
+        return undos >= 2 || (undos >= 1 && (learning?.corrections?.times(original, replacement) ?: 0) == 0)
+    }
+    private fun settleUndo() {
+        val kept = undo ?: return
+        val l = learning?.takeIf { it.enabled && !noLearning } ?: return
+        l.corrections.keep(kept.original, kept.replacement); l.changed()
+    }
     private fun resetTyping() {
+        settleUndo()
         cancelChip(); word?.reset(); undo = null; expectedCaret = -1; prefix = ""
     }
     private fun clearSpaces() { spaceAnchor = null; pickedAnchor = null; heldAnchor = null }
@@ -200,8 +212,9 @@ internal class KeyboardEngine(
         resetTyping()
         word = if (ordinaryField) {
             try {
-                fun decoder(code: String) = models.getOrPut(code) { loadDecoder(code).also(::loadPersonal) }
-                TypingWord(decoder(language), feedback.spatial, second?.let(::decoder))
+                fun decoder(code: String) = models.getOrPut(code) { loadDecoder(code).also(::loadPersonal) }.also { it.learning = learning }
+                learning?.enabled = feedback.learn
+                TypingWord(decoder(language), feedback.spatial, second?.let(::decoder)).also { it.learns = !noLearning }
                     .also { it.suggestSwearWords = feedback.suggestSwearWords; it.addsCapitals = feedback.autoCapitalize }
             } catch (_: java.io.IOException) { null } // The editor can still type if its assets cannot be read.
         } else null
@@ -221,7 +234,7 @@ internal class KeyboardEngine(
             pendingChip = Runnable {
                 pendingChip = null
                 if (word === w && w.token == token) surface?.suggestions(withEmail(w.strip(autocorrect = true).map {
-                    if (it.kind == Suggestion.Kind.Fix && feedback.blocked(w.decoder.model.language, token, it.text))
+                    if (it.kind == Suggestion.Kind.Fix && blocked(w.decoder.model.language, token, it.text))
                         Suggestion(it.text, Suggestion.Kind.Word) else it
                 }))
             }.also { main.postDelayed(it, CHIP_PAUSE_MS) }
@@ -254,6 +267,11 @@ internal class KeyboardEngine(
         if (near.isEmpty() || symbols || shift.locked || !autocorrecting || !target.connected) return hit
         return w.likelierKey(before(), hit, near, keys)
     }
+    fun adaptedKey(hit: Char, touch: KeyPoint, grid: KeyGrid): Char {
+        val l = learning?.takeIf { it.enabled } ?: return hit
+        if (word == null || symbols || !feedback.autocorrect) return hit
+        return l.touch.key(hit, touch.x, touch.y, grid)
+    }
     /** Shift as the keys show it: letters type capitals while it is on or held. */
     val uppercase get() = shift.uppercase
 
@@ -262,6 +280,7 @@ internal class KeyboardEngine(
         edited()
         val w = word
         if (w == null || symbols || !text.single().isLetter()) { type(text); return }
+        settleUndo()
         undo = null
         if (w.token.isEmpty()) {
             val b = takeHeldSpace(before())
@@ -349,7 +368,7 @@ internal class KeyboardEngine(
             if (swap != null && replace(swap.original, swap.replacement + " ")) { resetTyping(); afterSpace(now); return }
             if (autocorrecting && old.isNotEmpty() && endsWith(prefix + old)) {
                 val fix = w.finish(' ', point, grid)
-                if (fix != null && !feedback.blocked(lang, fix.original, fix.replacement) && replace(fix.original, fix.replacement + " ")) {
+                if (fix != null && !blocked(lang, fix.original, fix.replacement) && replace(fix.original, fix.replacement + " ")) {
                     cancelChip()
                     undo = Undo(lang, fix.original, fix.replacement)
                     if (expectedCaret >= 0) expectedCaret += fix.replacement.length + 1 - fix.original.length
@@ -394,7 +413,7 @@ internal class KeyboardEngine(
             if (swap != null && replace(swap.original, swap.replacement + value)) { resetTyping(); showPredictions(before()); inputDone(); return }
             if (autocorrecting && !urlField && w.token.isNotEmpty() && endsWith(prefix + w.token)) {
                 val fix = w.finish(value[0])
-                if (fix != null && !feedback.blocked(w.decoder.model.language, fix.original, fix.replacement) &&
+                if (fix != null && !blocked(w.decoder.model.language, fix.original, fix.replacement) &&
                     replace(fix.original, fix.replacement + value)) { resetTyping(); showPredictions(before()); inputDone(); return }
             }
         }
@@ -412,6 +431,7 @@ internal class KeyboardEngine(
         undo = null
         if (last != null && endsWith(last.replacement + " ") && replace(last.replacement + " ", last.original)) {
             if (!noLearning) feedback.undo(last.language, last.original, last.replacement)
+            learning?.corrections?.undone(last.original, last.replacement)
             val typed = last.original.substringAfterLast(' ')
             if (!noLearning && word?.worthLearning(typed) == true && typed.all { it.isLetter() || it == '\'' }) feedback.noteWord(typed)
             prefix = before().dropLast(typed.length).takeLast(40); word?.restored(typed, prefix)
@@ -499,7 +519,8 @@ internal class KeyboardEngine(
     fun clearForDictation() { edited(); resetTyping(); clearSpaces(); surface?.suggestions(emptyList()) }
 
     /** The editor or the keyboard went away: forget the word, never carry it to the next field. */
-    fun leave() { learnEmails(); edited(); resetTyping(); clearSpaces(); word = null; surface?.suggestions(emptyList()) }
+    fun learningCleared() { learning?.clear() }
+    fun leave() { learnEmails(); edited(); resetTyping(); learning?.let { l -> background.execute { l.saveIfChanged() } }; clearSpaces(); word = null; surface?.suggestions(emptyList()) }
 
     /** Dictated text with only the separators missing at the cursor; mid-sentence its first word loses
      * the capital Whisper gave it ([SpokenText.continuing], [language] as dictated or "en" translated). */

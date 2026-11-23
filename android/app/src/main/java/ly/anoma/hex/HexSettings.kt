@@ -109,6 +109,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val swipeDelete = remember(revision) { typing.swipeDelete }
     val symbolHolds = remember(revision) { typing.symbolHolds }
     val learned = remember(revision) { typing.learnedWords.size }
+    val learn = remember(revision) { typing.learn }
     val holdMs = remember(revision) { typing.holdMs }
     val popups = remember(revision) { typing.popups }
     val haptics = remember(revision) { typing.haptics }
@@ -249,8 +250,9 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                             Rule(); Toggle(stringResource(R.string.settings_symbol_holds), stringResource(R.string.settings_symbol_holds_detail), symbolHolds) { typing.symbolHolds = it }
                             Rule(); Stepper(stringResource(R.string.settings_hold_delay), stringResource(R.string.settings_hold_delay_detail),
                                 "$holdMs ms", { typing.holdMs = holdMs - 25 }, { typing.holdMs = holdMs + 25 })
+                            Rule(); Toggle(stringResource(R.string.settings_learn), stringResource(R.string.settings_learn_detail), learn) { typing.learn = it }
                             Rule(); Entry(stringResource(R.string.settings_learned_words), stringResource(R.string.settings_learned_words_detail, learned),
-                                if (learned > 0) stringResource(R.string.settings_learned_words_clear) else "", if (learned > 0) ({ typing.clearLearned() }) else null)
+                                stringResource(R.string.settings_learned_words_clear), { typing.clearLearned() })
                             Rule(); Toggle(stringResource(R.string.settings_popups), stringResource(R.string.settings_popups_detail), popups) { typing.popups = it }
                             Rule(); Toggle(stringResource(R.string.settings_haptics), stringResource(R.string.settings_haptics_detail), haptics) { typing.haptics = it }
                         }

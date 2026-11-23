@@ -68,7 +68,12 @@ internal class TypingPreferences(context: Context) {
         if (learned) edit.putString(LEARNED_WORDS, (learnedWords.filterNot { it.equals(word, true) } + word).takeLast(WordCounts.KEPT).joinToString("\n"))
         edit.apply()
     }
-    fun clearLearned() { prefs.edit().remove(WORD_COUNTS).remove(LEARNED_WORDS).apply() }
+    fun clearLearned() {
+        prefs.edit().remove(WORD_COUNTS).remove(LEARNED_WORDS).putLong(CLEAR_LEARNING, System.currentTimeMillis()).apply()
+    }
+    var learn: Boolean
+        get() = prefs.getBoolean(LEARN, true)
+        set(value) { prefs.edit().putBoolean(LEARN, value).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
@@ -81,6 +86,7 @@ internal class TypingPreferences(context: Context) {
         val bytes = (language + "\u0000" + original.lowercase() + "\u0000" + replacement.lowercase()).toByteArray()
         return android.util.Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(bytes), android.util.Base64.NO_WRAP)
     }
+    fun undos(language: String, original: String, replacement: String) = prefs.getInt(pair(language, original, replacement), 0)
     fun blocked(language: String, original: String, replacement: String) =
         prefs.getInt(pair(language, original, replacement), 0) >= 2
     fun undo(language: String, original: String, replacement: String) {
@@ -97,6 +103,8 @@ internal class TypingPreferences(context: Context) {
         const val HIDE_EMOJI = "hideEmoji"
         const val SYMBOL_HOLDS = "symbolHolds"
         const val LEARNED_WORDS = "learnedWords"
+        const val CLEAR_LEARNING = "clearLearning"
+        const val LEARN = "learn"
         private const val WORD_COUNTS = "wordCounts"
         private const val HOLD_MS = "holdMs"
         val HOLD_RANGE = 50..1000

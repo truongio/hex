@@ -103,9 +103,11 @@
     <string name="settings_swipe_delete_detail">A quick swipe left across the letters</string>
     <string name="settings_symbol_holds">Symbols on long press</string>
     <string name="settings_symbol_holds_detail">Each letter shows a symbol; hold it to type the symbol</string>
-    <string name="settings_learned_words">Learned words</string>
-    <string name="settings_learned_words_detail">%1$d words you typed twice, kept and suggested</string>
-    <string name="settings_learned_words_clear">Clear</string>
+    <string name="settings_learn">Learn from my typing</string>
+    <string name="settings_learn_detail">Your words, phrases, tap pattern and kept corrections, on this phone only</string>
+    <string name="settings_learned_words">What Hex learned</string>
+    <string name="settings_learned_words_detail">%1$d new words, plus your phrases and tap pattern</string>
+    <string name="settings_learned_words_clear">Clear all</string>
     <string name="settings_hold_delay">Long-press delay</string>
     <string name="settings_hold_delay_detail">How long to hold a key for its accents and symbols</string>
     <string name="settings_second_language">Second language</string>
