@@ -19,6 +19,13 @@ class FieldTypingTest {
         assertEquals(FieldTyping.Full, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_URI or TYPE_TEXT_FLAG_NO_SUGGESTIONS, IME_ACTION_GO))
     }
 
+    @Test fun chatPromptsCompleteAndCorrect() {
+        assertEquals(FieldTyping.Full, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE or TYPE_TEXT_FLAG_NO_SUGGESTIONS, IME_ACTION_NONE))
+        assertEquals(FieldTyping.Full, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE or TYPE_TEXT_FLAG_CAP_SENTENCES or TYPE_TEXT_FLAG_NO_SUGGESTIONS, IME_ACTION_SEND))
+        assertEquals(FieldTyping.Literal, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE or TYPE_TEXT_VARIATION_PASSWORD, IME_ACTION_NONE))
+        assertEquals(FieldTyping.Literal, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE or TYPE_TEXT_VARIATION_EMAIL_ADDRESS, IME_ACTION_NONE))
+    }
+
     @Test fun privateAndLiteralFieldsStayLiteral() {
         assertEquals(FieldTyping.Full, FieldTyping.of(TYPE_CLASS_TEXT, IME_ACTION_SEND))
         assertEquals(FieldTyping.Literal, FieldTyping.of(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_NO_SUGGESTIONS, IME_ACTION_DONE))
