@@ -661,7 +661,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         val slide = swipeSlide ?: return
         val dx = swipeOrigin - x
         val start = width * SWIPE_SHARE
-        val words = if (dx < start / 2) 0 else maxOf(1, 1 + ((dx - start) / (KeyboardMetrics.DELETE_STEP * density)).toInt())
+        val words = if (dx < start / 2) 0 else maxOf(1, 1 + ((dx - start) / (SWIPE_STEP * density)).toInt())
         if (words == swipeWords) return
         slide.select(words)
         if (slide.words != swipeWords && vibrates(context, ime.feedback.haptics)) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
@@ -793,6 +793,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         const val PERIOD_TAP_MS = 140L
         const val SWIPE_SHARE = .35f
         const val FLICK_SHARE = .12f
+        const val SWIPE_STEP = 64f
         const val FLICK_SPEED = .9f
         const val SWIPE_MS = 450L
     }
