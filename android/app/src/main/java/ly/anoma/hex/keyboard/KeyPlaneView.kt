@@ -74,6 +74,9 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
     private var swipeY = 0f
     private var swipeAt = 0L
     private var swiped = false
+    private var swipeOrigin = 0f
+    private var swipeSlide: DeleteSlide? = null
+    private var swipeWords = 0
     private val comma: KeyCap
     private val emojiKey: KeyCap
     private val period: KeyCap
@@ -634,19 +637,38 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
                 val dx = swipeX - e.x
                 if (e.eventTime - swipeAt > SWIPE_MS) { swipeX = Float.NaN; return false }
                 if (dx > width * SWIPE_SHARE && dx > 2 * kotlin.math.abs(e.y - swipeY)) {
-                    swipeX = Float.NaN; swiped = true
+                    swipeOrigin = swipeX; swipeX = Float.NaN; swiped = true
                     clearCallout(); endSlide()
-                    ime.engine.deleteWord()
-                    if (vibrates(context, ime.feedback.haptics)) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    swipeSlide = ime.engine.deleteSlide()
+                    swipeWords = 0
+                    swipeTo(e.x)
                     return true
                 }
             }
         }
         return false
     }
+    private fun swipeTo(x: Float) {
+        val slide = swipeSlide ?: return
+        val dx = swipeOrigin - x
+        val start = width * SWIPE_SHARE
+        val words = if (dx < start / 2) 0 else maxOf(1, 1 + ((dx - start) / (KeyboardMetrics.DELETE_STEP * density)).toInt())
+        if (words == swipeWords) return
+        slide.select(words)
+        if (slide.words != swipeWords && vibrates(context, ime.feedback.haptics)) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        swipeWords = slide.words
+    }
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (swiped) {
-            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) swiped = false
+            when (e.actionMasked) {
+                MotionEvent.ACTION_MOVE -> swipeTo(e.x)
+                MotionEvent.ACTION_UP -> {
+                    swiped = false
+                    if (swipeWords > 0) ime.engine.deleteSelection() else swipeSlide?.select(0)
+                    swipeSlide = null; swipeWords = 0
+                }
+                MotionEvent.ACTION_CANCEL -> { swiped = false; swipeSlide?.select(0); swipeSlide = null; swipeWords = 0 }
+            }
             return true
         }
         return super.onTouchEvent(e)

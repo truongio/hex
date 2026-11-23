@@ -100,7 +100,7 @@
     <string name="settings_emoji_key">Emoji key</string>
     <string name="settings_emoji_key_detail">Off, space gets wider</string>
     <string name="settings_swipe_delete">Swipe left to delete a word</string>
-    <string name="settings_swipe_delete_detail">A quick swipe left across the letters</string>
+    <string name="settings_swipe_delete_detail">Swipe left across the letters; keep dragging to select more words</string>
     <string name="settings_symbol_holds">Symbols on long press</string>
     <string name="settings_symbol_holds_detail">Each letter shows a symbol; hold it to type the symbol</string>
     <string name="settings_learn">Learn from my typing</string>
