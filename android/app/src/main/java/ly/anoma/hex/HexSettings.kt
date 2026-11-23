@@ -111,6 +111,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val learned = remember(revision) { typing.learnedWords.size }
     val learn = remember(revision) { typing.learn }
     val holdMs = remember(revision) { typing.holdMs }
+    val periodHoldMs = remember(revision) { typing.periodHoldMs }
     val popups = remember(revision) { typing.popups }
     val haptics = remember(revision) { typing.haptics }
     var copied by remember(transcript) { mutableStateOf(false) }
@@ -250,6 +251,8 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                             Rule(); Toggle(stringResource(R.string.settings_symbol_holds), stringResource(R.string.settings_symbol_holds_detail), symbolHolds) { typing.symbolHolds = it }
                             Rule(); Stepper(stringResource(R.string.settings_hold_delay), stringResource(R.string.settings_hold_delay_detail),
                                 "$holdMs ms", { typing.holdMs = holdMs - 25 }, { typing.holdMs = holdMs + 25 })
+                            Rule(); Stepper(stringResource(R.string.settings_period_hold), stringResource(R.string.settings_period_hold_detail),
+                                "$periodHoldMs ms", { typing.periodHoldMs = periodHoldMs - 20 }, { typing.periodHoldMs = periodHoldMs + 20 })
                             Rule(); Toggle(stringResource(R.string.settings_learn), stringResource(R.string.settings_learn_detail), learn) { typing.learn = it }
                             Rule(); Entry(stringResource(R.string.settings_learned_words), stringResource(R.string.settings_learned_words_detail, learned),
                                 stringResource(R.string.settings_learned_words_clear), { typing.clearLearned() })

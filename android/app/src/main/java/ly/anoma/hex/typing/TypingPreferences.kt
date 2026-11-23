@@ -74,6 +74,9 @@ internal class TypingPreferences(context: Context) {
     var learn: Boolean
         get() = prefs.getBoolean(LEARN, true)
         set(value) { prefs.edit().putBoolean(LEARN, value).apply() }
+    var periodHoldMs: Int
+        get() = prefs.getInt("periodHoldMs", 40).coerceIn(PERIOD_HOLD_RANGE)
+        set(value) { prefs.edit().putInt("periodHoldMs", value.coerceIn(PERIOD_HOLD_RANGE)).apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
@@ -108,6 +111,7 @@ internal class TypingPreferences(context: Context) {
         private const val WORD_COUNTS = "wordCounts"
         private const val HOLD_MS = "holdMs"
         val HOLD_RANGE = 50..1000
+        val PERIOD_HOLD_RANGE = 0..1000
         val KEY_HEIGHTS = 70..140
         val SIDE_MARGINS = 0..48
         private const val NONE = "none"

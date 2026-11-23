@@ -194,7 +194,8 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         typesOnLift(period, preview = { null },
             holds = { if (current?.symbols == false) LetterFeedback.periodHolds else listOf(LetterFeedback.symbolHolds('.')) },
             default = { if (current?.symbols == false) LetterFeedback.PERIOD_DEFAULT else 0 },
-            type = { option -> if (option != null) ime.engine.type(option) else period.performClick() })
+            type = { option -> if (option != null) ime.engine.type(option) else period.performClick() },
+            delay = { ime.feedback.periodHoldMs.toLong() }, tapMs = PERIOD_TAP_MS)
         bottomSlides[period] = { ime.engine.type(".") }
         enterKey = caps.cap("", context.getString(R.string.keyboard_return), modifier, 17f, ime.engine::enter)
         enterKey.sound = AudioManager.FX_KEYPRESS_RETURN
@@ -558,9 +559,12 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
      * options to slide over, and on lifting (or when another key goes down first) [type] with the option
      * chosen, or null for the key's own. */
     private fun typesOnLift(k: KeyCap, preview: () -> String?, holds: () -> List<List<String>>, default: () -> Int = { 0 },
-                            down: (MotionEvent) -> Unit = {}, type: (String?) -> Unit, done: () -> Unit = {}) {
+                            down: (MotionEvent) -> Unit = {}, type: (String?) -> Unit, done: () -> Unit = {},
+                            delay: () -> Long = { ime.feedback.holdMs.toLong() }, tapMs: Long = 0) {
+        var downAt = 0L; var downX = 0f; var downY = 0f; var moved = false
         fun finish(): Boolean {
-            val option = if (feedback.choosing) feedback.selected() else null
+            val tap = !moved && android.os.SystemClock.uptimeMillis() - downAt < tapMs
+            val option = if (feedback.choosing && !tap) feedback.selected() else null
             val pressed = k.isPressed; k.isPressed = false; clearCallout()
             if (pressed) type(option)
             done()
@@ -573,16 +577,18 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
                     if (e.actionMasked == MotionEvent.ACTION_POINTER_DOWN && roll.up(k)) finish()
                     roll.down(k) { finish() }
                     clearCallout(); v.isPressed = true
+                    downAt = e.eventTime; downX = e.getX(e.actionIndex); downY = e.getY(e.actionIndex); moved = false
                     down(e)
                     val shown = preview()
                     if (shown != null && ime.feedback.popups && ime.previewAllowed) feedback.present(k.face, listOf(shown))
                     val options = holds()
                     if (options.firstOrNull().isNullOrEmpty().not()) {
                         pendingAccents = Runnable { if (v.isPressed) feedback.hold(k.face, options, default()) }
-                        postDelayed(pendingAccents!!, ime.feedback.holdMs.toLong())
+                        postDelayed(pendingAccents!!, delay())
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (kotlin.math.abs(e.x - downX) > slop || kotlin.math.abs(e.y - downY) > slop) moved = true
                     if (feedback.choosing && v.isPressed) { val (x, y) = inHost(v, e); feedback.move(x, y) }
                     else if (e.x < -slop || e.x > v.width + slop || e.y < -slop || e.y > v.height + slop) {
                         if (v.isPressed) clearCallout()
@@ -781,6 +787,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
     override fun onDetachedFromWindow() { cancelGestures(); super.onDetachedFromWindow() }
     private companion object {
         const val NUMBER_ROW_SHARE = .8f
+        const val PERIOD_TAP_MS = 140L
         const val SWIPE_SHARE = .35f
         const val SWIPE_MS = 450L
     }
