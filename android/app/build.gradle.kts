@@ -235,7 +235,9 @@ tasks.matching { it.name.matches(Regex("merge(Debug|Release|Preview)NativeLibs")
     val nm = android.ndkDirectory.resolve("toolchains/llvm/prebuilt").listFiles().orEmpty().map { it.resolve("bin/llvm-nm") }
     doLast {
         val tool = nm.first { it.canExecute() }
-        val libraries = outputs.files.asFileTree.matching { include("**/*.so") }.files
+        // The fork's sherpa-onnx prebuilt (the multilingual Parakeet engine) names its threads with prctl and is
+        // loaded only once that engine is chosen, so it is left out of the check.
+        val libraries = outputs.files.asFileTree.matching { include("**/*.so"); exclude("**/libsherpa-onnx-*.so", "**/libonnxruntime.so") }.files
         check(libraries.isNotEmpty()) { "No native libraries to check" }
         for (library in libraries) {
             val process = ProcessBuilder(cmake.path, "-DNM=${tool.path}", "-DLIB=${library.path}", "-P", script.path)
