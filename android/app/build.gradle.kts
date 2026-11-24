@@ -96,7 +96,7 @@ android {
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
-        applicationId = "ly.anoma.hex"
+        applicationId = "io.truongio.hex"
         minSdk = 31
         targetSdk = 36
         versionCode = 5
