@@ -106,4 +106,13 @@ class BilingualTypingTest {
         val own = decoder("sv").also { it.personal = PersonalWords(it.model, listOf("flingsalt"), emptyMap()) }
         assertEquals("jag köpte flingsalt ", TypingWord(own, true, en).typed("jag köpte flingsald "))
     }
+
+    @Test fun aKnownWordStillOffersAMuchCommonerNeighbour() {
+        for (before in listOf("", "what's the postal code for ")) {
+            val w = mixed(); w.reset(before)
+            for (c in "thus") { val p = grid.centres.getValue(c); w.letter(c.toString(), p.x, p.y, grid) }
+            assertEquals(before, listOf("thus", "this"), w.strip().take(2).map { it.text })
+            assertNull(w.replacement())
+        }
+    }
 }

@@ -379,7 +379,8 @@ internal class SpatialDecoder(val model: TypingModel) {
             val margin = if (best == null || !knownLiteral || foldAccents(best.text.lowercase()) == foldAccents(typed) ||
                 (listedOnly && ' ' !in best.text)) 2.0 else 7.0
             var replace = if (best != null && cost - best.cost >= margin) best.text else null
-            val shown = readings.asSequence().filter { it.cost < cost && !it.text.equals(typed, ignoreCase = true) }
+            val ceiling = if (knownLiteral) cost + KNOWN_WORD_SLACK else cost
+            val shown = readings.asSequence().filter { it.cost < ceiling && !it.text.equals(typed, ignoreCase = true) }
                 .distinctBy { it.text.lowercase() }.toMutableList()
             // Nothing above read a spelling that is no word at all: a missed space may still explain it,
             // with a slip in the second word or three or more words run together (iOS #2244). Never a
@@ -414,5 +415,6 @@ internal class SpatialDecoder(val model: TypingModel) {
         // A space tap reads as a letter only within about the bar's top fifth.
         private const val MERGE_REACH = 3.0
         private const val USER_WORD_COST = 11.0
+        private const val KNOWN_WORD_SLACK = 3.0
     }
 }
