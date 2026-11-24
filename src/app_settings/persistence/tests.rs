@@ -569,6 +569,25 @@ fn an_invalid_stop_phrase_loads_the_default_and_keeps_its_switch() {
 }
 
 #[test]
+fn an_invalid_clipboard_phrase_loads_the_default_and_keeps_its_switch() {
+    let original =
+        br#"{"labs":{"clipboard_phrase":true,"clipboard_phrase_text":"clip","live_text":true}}"#;
+    let file = SettingsFile::new(original);
+    let settings = AppSettings::load_from(&file.path).unwrap();
+    assert!(
+        settings.labs.clipboard_phrase,
+        "the switch stays as saved; only the phrase falls back"
+    );
+    assert_eq!(
+        settings.labs.clipboard_phrase_text,
+        crate::dictation::clipboard_phrase::DEFAULT_PHRASE
+    );
+    assert!(settings.labs.live_text);
+    assert_eq!(fs::read(&file.path).unwrap(), original);
+    assert!(file.backups().is_empty());
+}
+
+#[test]
 fn an_invalid_signature_loads_the_default_and_keeps_its_switch() {
     let original = br#"{"labs":{"signature":true,"signature_text":"two\nlines","live_text":true}}"#;
     let file = SettingsFile::new(original);
@@ -1098,4 +1117,41 @@ fn a_managed_lock_saves_a_retired_yearly_stats_choice_as_dictation_stats() {
         "the file's own Yearly stats choice survives the lock"
     );
     assert!(saved["labs"].get("yearly_stats").is_none());
+}
+/// Labs › Model switch shortcut saves both selections in one write: the saved
+/// other model becomes the one that runs, and the one that ran becomes the
+/// way back. A reload sees the same pair.
+#[test]
+fn a_model_switch_swap_saves_both_selections() {
+    use crate::app_settings::KeyboardModelChoice;
+    use crate::transcription::other_model;
+    let file = SettingsFile::new(b"{}");
+    let base = AppSettings::load_from(&file.path).unwrap();
+    let mut settings = base.clone();
+    settings.labs.model_switch_shortcut = true;
+    settings.model_switch_other = Some(KeyboardModelChoice {
+        model: TranscriptionModelId::ParakeetV3,
+        language: "es".into(),
+    });
+    let before = settings.transcription.clone();
+    let plan = other_model::planned(&settings).unwrap().unwrap();
+    let mut candidate = settings.clone();
+    candidate.model_switch_other = Some(plan.other.clone());
+    candidate.remember_transcription(plan.to.clone());
+    let saved = base
+        .update_at(&candidate, &file.path, Policy::default())
+        .unwrap();
+    assert_eq!(saved.transcription.model, TranscriptionModelId::ParakeetV3);
+    assert_eq!(saved.transcription.language, "es");
+    assert_eq!(
+        saved.model_switch_other,
+        Some(KeyboardModelChoice {
+            model: before.model,
+            language: before.language,
+        })
+    );
+
+    let reloaded = AppSettings::load_from(&file.path).unwrap();
+    assert_eq!(reloaded.transcription, saved.transcription);
+    assert_eq!(reloaded.model_switch_other, saved.model_switch_other);
 }

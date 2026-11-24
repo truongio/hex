@@ -11,13 +11,14 @@
 use std::cell::Cell;
 use std::time::Duration;
 
-use rune::{Color, Cx, El, LineCap, Shape, SpringPair, Transition, Tx, canvas, col, el, row, text};
+use rune::{Color, Cx, El, LineCap, Shape, Tx, canvas, col, el, row, text};
 
-use super::Ui;
 use super::controls::{
     ButtonKind, DESCRIPTION, KEY_GAP, KeySize, Paint, TRAY_PADDING, button, key_tray, keycap,
+    modal_sheet,
 };
 use super::shortcut_mode::{Trigger, pick};
+use super::{Modal, Ui};
 use crate::desktop::i18n::tr;
 
 const MODAL_WIDTH: f32 = 600.0;
@@ -114,7 +115,6 @@ pub(super) const DOUBLE_TAP: Script = Script {
 
 #[derive(Default)]
 pub(super) struct Explainer {
-    pub(super) open: bool,
     /// The poll clock when the tape started.
     start: Option<f64>,
     /// Since the tape started, so takes before it never show.
@@ -148,19 +148,14 @@ impl Explainer {
 /// Opens the modal over General, alone: it ends a shortcut recording and
 /// closes the model picker and any menu.
 pub(super) fn open(ui: &mut Ui) {
-    super::settings::cancel_capture(ui);
-    super::picker::close(ui);
-    super::sound_sets::close(ui);
-    super::vocabulary::close(ui);
-    ui.open = None;
-    ui.explainer.open = true;
+    ui.open_modal(Modal::Explainer);
     ui.explainer.start = None;
     ui.explainer.elapsed_ms = 0.0;
     ui.explainer.next_frame = 0.0;
 }
 
 pub(super) fn close(ui: &mut Ui) {
-    ui.explainer.open = false;
+    ui.close_modal_if(Modal::Explainer);
 }
 
 /// Opens the modal, held at `held_ms` or looping when `None`.
@@ -171,8 +166,11 @@ pub(super) fn fixture(ui: &mut Ui, held_ms: Option<f32>) {
 
 /// Advances the loop while the modal shows. True when it moved.
 pub(super) fn poll(ui: &mut Ui, clock: f64, visible: bool, tx: &mut Tx) -> bool {
+    if !ui.is_modal(Modal::Explainer) {
+        return false;
+    }
     let explainer = &mut ui.explainer;
-    if !explainer.open || !visible || explainer.held_ms.is_some() || explainer.reduced.get() {
+    if !visible || explainer.held_ms.is_some() || explainer.reduced.get() {
         return false;
     }
     let start = *explainer.start.get_or_insert(clock);
@@ -187,19 +185,18 @@ pub(super) fn poll(ui: &mut Ui, clock: f64, visible: bool, tx: &mut Tx) -> bool 
 /// Rune reads Reduce Motion again when the window gains focus, after that
 /// frame's poll, so a stopped tape wakes once for the next poll to see it.
 pub(super) fn window_focused(ui: &mut Ui, focused: bool, tx: &mut Tx) {
-    let explainer = &mut ui.explainer;
-    if focused && explainer.open && explainer.reduced.get() {
-        explainer.next_frame = 0.0;
+    if focused && ui.is_modal(Modal::Explainer) && ui.explainer.reduced.get() {
+        ui.explainer.next_frame = 0.0;
         tx.wake_after(FRAME);
     }
 }
 
-pub(super) fn modal(ui: &Ui, cx: &Cx<Ui>, p: Paint) -> Option<[El; 2]> {
-    // Kept while closed too, so the poll after opening already knows.
+/// Kept while closed too, so the poll after opening already knows.
+pub(super) fn sync_reduced_motion(ui: &Ui, cx: &Cx<Ui>) {
     ui.explainer.reduced.set(cx.system_reduced_motion());
-    if !ui.explainer.open {
-        return None;
-    }
+}
+
+pub(super) fn modal(ui: &Ui, cx: &Cx<Ui>, p: Paint) -> [El; 2] {
     let t = ui.explainer.now();
     // A still tape needs no edge to slide out under.
     let fade = if ui.explainer.reduced.get() {
@@ -240,7 +237,7 @@ pub(super) fn modal(ui: &Ui, cx: &Cx<Ui>, p: Paint) -> Option<[El; 2]> {
                 visual(p, &colors, &keys, trigger.script(), lanes, t, fade),
             )
         }));
-    let mut panel = col()
+    let panel = col()
         .key("shortcut-mode-modal")
         .role("dialog")
         .label(tr("Shortcut mode"))
@@ -273,28 +270,7 @@ pub(super) fn modal(ui: &Ui, cx: &Cx<Ui>, p: Paint) -> Option<[El; 2]> {
                 .default_button(),
             ),
         );
-    for shadow in &p.k.elevation.overlay {
-        panel = panel.box_shadow(*shadow);
-    }
-    let layer = |key: &str| {
-        el().key(key)
-            .role("none")
-            .absolute(0.0, 0.0)
-            .w_full()
-            .h_full()
-    };
-    Some([
-        layer("explainer-scrim")
-            .fill(c.scrim)
-            .on_press(close)
-            .transition(Transition::opacity().springs(overlay_springs(p))),
-        layer("explainer-layer")
-            .center()
-            .transition(panel_transition(p))
-            // Keys stay inside, Escape or a press outside closes, and focus
-            // returns to the row that opened it.
-            .child(panel.modal(true, close)),
-    ])
+    modal_sheet(p, "explainer", panel, close)
 }
 
 /// The key tray's width until layout measures it: a one-glyph legend is
@@ -317,15 +293,6 @@ fn panel_width(keys: f32, window: Option<f32>) -> f32 {
     let wanted = option + 2.0 * PADDING;
     let room = window.map_or(f32::INFINITY, |window| window - 2.0 * WINDOW_MARGIN);
     wanted.min(room).max(MODAL_WIDTH)
-}
-
-/// How the panel enters and leaves: the same as the picker's.
-fn panel_transition(p: Paint) -> Transition {
-    super::controls::modal_transition(p)
-}
-
-fn overlay_springs(p: Paint) -> SpringPair {
-    SpringPair::new(p.k.motion.overlay, p.k.motion.overlay)
 }
 
 /// One trigger: its name and what it does beside its keys and lanes.

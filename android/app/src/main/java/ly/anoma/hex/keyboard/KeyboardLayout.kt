@@ -32,25 +32,6 @@ internal enum class FieldKind(val mark: String) {
     }
 }
 
-internal enum class FieldTyping {
-    Literal, Full;
-    companion object {
-        private val SECRET = setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
-            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
-        private val ADDRESS = setOf(InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)
-        fun of(inputType: Int, imeOptions: Int): FieldTyping {
-            if (inputType and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return Literal
-            val variation = inputType and InputType.TYPE_MASK_VARIATION
-            if (variation in SECRET || variation in ADDRESS) return Literal
-            val search = imeOptions and EditorInfo.IME_MASK_ACTION == EditorInfo.IME_ACTION_SEARCH ||
-                variation == InputType.TYPE_TEXT_VARIATION_FILTER || inputType and InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE != 0
-            val prompt = inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0
-            if (search || prompt || variation == InputType.TYPE_TEXT_VARIATION_URI) return Full
-            return if (inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0) Literal else Full
-        }
-    }
-}
-
 /** What the keys show: one page of one layout, with shift, the enter key and the field's kind. */
 internal data class KeyboardPage(
     val language: Spoken,
@@ -61,15 +42,35 @@ internal data class KeyboardPage(
     val enter: EnterKey,
     val kind: FieldKind = FieldKind.Text,
     val pad: Pad? = null,
+    /** Labs › Keyboard › Number row: the letter pages draw 1 to 0 above their letters too. */
+    val numberRow: Boolean = false,
+    /** Labs › Keyboard › Local currency: the phone's symbol, read once for the page, that the ?123 page shows
+     * in place of $ and that d holds on the letters, or null for $. The =< page then shows $ in that symbol's
+     * slot, or in ¥'s for one it has none, so both pages keep their keys and neither draws a symbol twice. */
+    val currency: Char? = null,
 ) {
-    val lines: List<String> get() {
-        val code = language.layoutCode
-        return when {
-            !symbols -> KeyboardLetters.rows(code)
-            more -> KeyboardLetters.symbols(code)
-            else -> KeyboardLetters.numbers(code)
-        }
+    val lines: List<String> get() = when {
+        !symbols -> KeyboardLetters.rows(language.layoutCode)
+        more -> KeyboardLetters.symbols(currency)
+        else -> KeyboardLetters.numbers(currency)
     }
+
+    /** What the bottom row's comma key types: the field's own mark on the letters (Gboard's @ in an email
+     * field and / in a URL), a comma on ?123, and =<'s <, which that page's seven-key row leaves out. */
+    val commaText: String get() = when {
+        !symbols -> kind.mark
+        more -> "<"
+        else -> ","
+    }
+
+    /** What the bottom row's period key types: . on the letters and ?123, and =<'s >. */
+    val periodText: String get() = if (symbols && more) ">" else "."
+
+    /** The ten digits above the letter rows while the number row shows; ?123 and the pads keep their own. */
+    val digits: String? get() = if (numberRow && !symbols && pad == null) KeyboardLetters.DIGITS else null
+
+    /** Row 1's digit corner hint, or none while the number row already shows the digit. */
+    fun hint(row: Int, index: Int): Char? = if (digits != null) null else KeyboardLetters.digit(row, index)
 }
 
 /** Sizes in dp, measured from Gboard on a Pixel 8 emulator (API 36, 411 dp wide, default

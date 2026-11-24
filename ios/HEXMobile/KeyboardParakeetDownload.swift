@@ -3,7 +3,7 @@ import Network
 import Observation
 import SwiftUI
 
-/// Experiments › Speech model in keyboard: gets Parakeet V2 into the App Group for the keyboard,
+/// Settings › Dictation › Speech model in keyboard: gets Parakeet V2 into the App Group for the keyboard,
 /// with FluidAudio's download (each file resumes from its `.partial`), at launch, whenever Hex
 /// comes back to the front, on Wi-Fi coming back and once the keyboard measured its memory,
 /// until every file is there. By itself only where the keyboard would use it (`hold`);
@@ -61,33 +61,41 @@ final class KeyboardParakeetDownload {
 
     /// What holds the download back now, nil once it may start by itself.
     var hold: Hold? {
-        let wanted = DictationController.wantedLanguage()
-        return Self.hold(
-            otherEngine: TwoLanguageDictationSettings().isEnabled || MultilingualParakeetSettings().language() != nil,
-            english: SpeechLanguagePicker.isEnglish(wanted),
-            keyboardLimit: KeyboardParakeetSettings().keyboardLimit,
+        Self.hold(
+            plan: KeyboardParakeetPlan.current(),
             unmetered: isUnmetered,
             freeBytes: Self.freeBytes()
         )
     }
 
-    /// Only for a keyboard that would use it: English, the keyboard's own limit measured and
-    /// enough (`KeyboardParakeetBudget`), a connection that isn't cellular, a hotspot or Low
-    /// Data Mode, and `freeSpaceNeeded` free (unknown space doesn't hold it).
+    /// Only for a keyboard that would use it: resolved from `KeyboardParakeetPlan`, plus a
+    /// connection that isn't cellular, a hotspot or Low Data Mode, and `freeSpaceNeeded` free.
     nonisolated static func hold(
-        otherEngine: Bool,
-        english: Bool,
-        keyboardLimit: Int?,
+        plan: KeyboardParakeetPlan,
         unmetered: Bool?,
         freeBytes: Int64?
     ) -> Hold? {
-        if otherEngine { return .otherEngine }
-        guard english else { return .notEnglish }
-        guard let keyboardLimit else { return .keyboardNotMeasured }
-        guard keyboardLimit >= KeyboardParakeetBudget.requiredLimit else { return .keyboardTooSmall }
-        guard unmetered == true else { return .notOnWiFi }
-        if let freeBytes, freeBytes < freeSpaceNeeded { return .needsSpace }
-        return nil
+        switch plan {
+        case .twoLanguage, .multilingual:
+            return .otherEngine
+        case .notEnglish:
+            return .notEnglish
+        case .unmeasured:
+            return .keyboardNotMeasured
+        case .tooSmall:
+            return .keyboardTooSmall
+        case .off, .awaitingV2Download, .readyV2:
+            guard unmetered == true else { return .notOnWiFi }
+            if let freeBytes, freeBytes < freeSpaceNeeded { return .needsSpace }
+            return nil
+        }
+    }
+
+    /// Whether a connection lets the download start by itself: up, not expensive (a personal
+    /// hotspot, or cellular as iOS usually prices it), not Low Data Mode, and not over cellular
+    /// at all, because iOS reports 5G as not expensive under "Allow More Data on 5G".
+    nonisolated static func isUnmetered(satisfied: Bool, expensive: Bool, constrained: Bool, cellular: Bool) -> Bool {
+        satisfied && !expensive && !constrained && !cellular
     }
 
     nonisolated static func freeBytes() -> Int64? {
@@ -123,6 +131,29 @@ final class KeyboardParakeetDownload {
         }
     }
 
+    /// `--snap-state model-card-waiting|downloading|ready`: Home's card in each state on the
+    /// simulator. The keyboard's limit is cleared, so nothing really downloads.
+    func applyFixture(_ scene: String) {
+        let group = UserDefaults(suiteName: KeyboardBridge.appGroup)
+        for key in [KeyboardParakeetSettings.enabledKey, KeyboardParakeetSettings.keyboardLimitKey, SpeechModelHomeCard.dismissedKey] {
+            group?.removeObject(forKey: key)
+        }
+        // English dictation, whatever the iPhone's language, so the card shows in every locale.
+        LanguageSettings().dictationLanguage = "en-US"
+        SpeechModelStore.clearComplete(ParakeetTranscriber.cacheDirectory)
+        KeyboardParakeetSettings().setKeyboardState(nil)
+        switch scene {
+        case "model-card-downloading":
+            state = .downloading(0.42)
+        case "model-card-ready":
+            try? FileManager.default.createDirectory(at: ParakeetTranscriber.cacheDirectory, withIntermediateDirectories: true)
+            SpeechModelStore.markComplete(ParakeetTranscriber.cacheDirectory)
+            KeyboardParakeetSettings().setKeyboardState(.ready)
+        default:
+            break
+        }
+    }
+
     private func show(_ fraction: Double) {
         guard task != nil, case .downloading(let shown) = state, fraction > shown else { return }
         state = .downloading(fraction)
@@ -148,7 +179,12 @@ final class KeyboardParakeetDownload {
         guard network == nil else { return }
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
-            let unmetered = path.status == .satisfied && !path.isExpensive && !path.isConstrained
+            let unmetered = KeyboardParakeetDownload.isUnmetered(
+                satisfied: path.status == .satisfied,
+                expensive: path.isExpensive,
+                constrained: path.isConstrained,
+                cellular: path.usesInterfaceType(.cellular)
+            )
             Task { @MainActor in KeyboardParakeetDownload.shared.networkChanged(unmetered) }
         }
         monitor.start(queue: DispatchQueue.global(qos: .utility))
@@ -208,6 +244,8 @@ extension DictationController {
 /// keyboard's word stays only while fresh.
 struct KeyboardParakeetStatus: View {
     let download: KeyboardParakeetDownload
+    /// In a box of its own (Settings); Home's card draws the box around it instead.
+    var framed = true
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { context in
@@ -230,14 +268,33 @@ struct KeyboardParakeetStatus: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(framed ? 14 : 0)
+                .background(framed ? Color.white.opacity(0.055) : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
     }
 
     private func line(now: Date) -> String? {
-        switch download.state {
+        Self.line(
+            state: download.state,
+            isDownloaded: download.isDownloaded,
+            hold: download.hold,
+            keyboardState: KeyboardParakeetSettings().keyboardState,
+            now: now
+        )
+    }
+
+    /// What the row says. The keyboard's word is about English: dictating in another language
+    /// (Hinglish, French), Apple's speech recognition takes it, so a downloaded model says
+    /// it's only for English rather than "Ready in the keyboard".
+    static func line(
+        state: KeyboardParakeetDownload.State,
+        isDownloaded: Bool,
+        hold: KeyboardParakeetDownload.Hold?,
+        keyboardState: (state: KeyboardParakeetSettings.KeyboardState, at: Date)?,
+        now: Date
+    ) -> String? {
+        switch state {
         case .downloading:
             return String(localized: "Downloading the speech model")
         case .failed(let message):
@@ -245,8 +302,8 @@ struct KeyboardParakeetStatus: View {
         case .idle:
             break
         }
-        guard download.isDownloaded else { return Self.line(for: download.hold) }
-        switch KeyboardParakeetSettings().keyboardState {
+        guard isDownloaded, hold != .notEnglish else { return line(for: hold) }
+        switch keyboardState {
         case (.preparing, let at)? where now.timeIntervalSince(at) < 180:
             return String(localized: "Getting ready in the keyboard")
         case (.ready, _)?:
@@ -273,5 +330,102 @@ struct KeyboardParakeetStatus: View {
         case .otherEngine, nil:
             nil
         }
+    }
+}
+
+/// Home's card about Speech model in keyboard: what it is, then where its download stands in
+/// the status lines Settings › Dictation shows; a tap opens that page. Only where the keyboard
+/// would use it (the switch on, an iPhone that fits, none of the holds that mean it never
+/// will); once it's ready it can be dismissed, and a dismissed card never comes back.
+struct SpeechModelHomeCard: View {
+    let download: KeyboardParakeetDownload
+    /// Opens Settings › Dictation, where the switch is.
+    let open: () -> Void
+    @State private var dismissed = SpeechModelHomeCard.isDismissed()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static let dismissedKey = "home.speechModelCard.dismissed"
+
+    static func isDismissed(_ defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) -> Bool {
+        defaults?.bool(forKey: dismissedKey) ?? false
+    }
+
+    static func dismiss(_ defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        defaults?.set(true, forKey: dismissedKey)
+    }
+
+    static func shows(enabled: Bool, fits: Bool, hold: KeyboardParakeetDownload.Hold?, dismissed: Bool) -> Bool {
+        guard enabled, fits, !dismissed else { return false }
+        switch hold {
+        case .otherEngine?, .notEnglish?, .keyboardTooSmall?:
+            return false
+        default:
+            return true
+        }
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { _ in
+            let settings = KeyboardParakeetSettings()
+            if Self.shows(enabled: settings.isEnabled, fits: KeyboardParakeetSettings.fits(), hold: download.hold, dismissed: dismissed) {
+                card(ready: download.isDownloaded && settings.keyboardState?.state == .ready)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+        .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: dismissed)
+    }
+
+    private func card(ready: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 15))
+                    .foregroundStyle(HexTheme.textMuted)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("New: Hex's own speech model")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(HexTheme.textBase)
+                    Text("English dictation, right in the keyboard.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(HexTheme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                if !ready {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(HexTheme.textMuted)
+                        .frame(width: 28, height: 28)
+                }
+                if ready {
+                    Button {
+                        Self.dismiss()
+                        dismissed = true
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(HexTheme.textMuted)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
+                }
+            }
+            KeyboardParakeetStatus(download: download, framed: false)
+                .padding(.leading, 25)
+        }
+        .padding(14)
+        .background(
+            Color.white.opacity(0.055),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture(perform: open)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: Text("Dictation"), open)
+        .accessibilityIdentifier("speech-model-card")
     }
 }

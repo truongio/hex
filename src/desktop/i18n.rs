@@ -12,17 +12,24 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use strings::TRANSLATIONS;
 
 mod agents;
+mod annotate_dictation;
+mod calls;
+mod clipboard_phrase;
 mod clock;
 mod failures;
 mod french;
 mod history;
 mod hud_height;
+mod hungarian;
 mod labs;
+mod meeting_mute;
 mod meetings;
 mod menu;
+mod model_switch;
 pub(crate) mod numbers;
 mod onboarding;
 mod portuguese;
+mod routing;
 mod russian;
 mod screenshots;
 mod signature;
@@ -30,6 +37,8 @@ mod strings;
 mod style;
 mod text_language;
 mod traditional_chinese;
+mod transcript_edits;
+mod voice_isolation;
 
 pub(crate) use clock::{clock_time, twelve_hour_clock};
 
@@ -39,7 +48,7 @@ pub(crate) type LanguageChoice = (Option<&'static str>, &'static str);
 
 /// The selectable interface languages: persisted code and native name. The
 /// leading `None` entry follows the system display language. Português
-/// (Brasil), Français, 繁體中文, and Русский have not had a native
+/// (Brasil), Français, 繁體中文, Русский, and Magyar have not had a native
 /// speaker's review yet.
 pub(crate) const LANGUAGE_CHOICES: &[LanguageChoice] = &[
     (None, "System"),
@@ -54,6 +63,7 @@ pub(crate) const LANGUAGE_CHOICES: &[LanguageChoice] = &[
     (Some("pt"), "Português (Brasil)"),
     (Some("fr"), "Français"),
     (Some("ru"), "Русский"),
+    (Some("hu"), "Magyar"),
 ];
 
 /// [`LANGUAGE_CHOICES`] in the order the select offers them: System first,
@@ -105,9 +115,12 @@ const FRENCH_COLUMN: u8 = 7;
 const TRADITIONAL_CHINESE_COLUMN: u8 = 8;
 /// Russian, kept in its own table ([`russian::TRANSLATIONS`]).
 const RUSSIAN_COLUMN: u8 = 9;
+/// Hungarian, kept in its own table ([`hungarian::TRANSLATIONS`]).
+const HUNGARIAN_COLUMN: u8 = 10;
 
 /// The column for a persisted code; `pt` (any Portuguese system language)
-/// is Brazilian Portuguese, `fr` any French one, and `ru` any Russian one.
+/// is Brazilian Portuguese, `fr` any French one, `ru` any Russian one, and
+/// `hu` any Hungarian one.
 fn column_for_code(code: &str) -> u8 {
     match code {
         "pl" => 0,
@@ -120,6 +133,7 @@ fn column_for_code(code: &str) -> u8 {
         "pt" => PORTUGUESE_COLUMN,
         "fr" => FRENCH_COLUMN,
         "ru" => RUSSIAN_COLUMN,
+        "hu" => HUNGARIAN_COLUMN,
         _ => ENGLISH,
     }
 }
@@ -318,16 +332,24 @@ pub(crate) fn tr(english: &str) -> &str {
         PORTUGUESE_COLUMN => portuguese::table(),
         FRENCH_COLUMN => french::table(),
         RUSSIAN_COLUMN => russian::table(),
+        HUNGARIAN_COLUMN => hungarian::table(),
         _ => &tables()[column as usize],
     };
     table.get(english).copied().unwrap_or(english)
 }
 
-/// Whether the interface is in English, for labels whose English form
-/// differs from the translated key (macOS menus' title case).
-#[cfg(target_os = "macos")]
-pub(crate) fn english() -> bool {
-    current() == ENGLISH
+/// A menu label in the interface language: macOS's title case in English
+/// (`english_title`), else the window's sentence-case label translated, with
+/// the title's trailing `…` kept.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn menu_label(english_title: &str, translated: &str) -> String {
+    if current() == ENGLISH {
+        return english_title.into();
+    }
+    match english_title.strip_suffix('…') {
+        Some(_) if !translated.ends_with('…') => format!("{translated}…"),
+        _ => translated.into(),
+    }
 }
 
 /// Translate a `{}` template and substitute the dynamic value, keeping
@@ -373,23 +395,27 @@ fn tables() -> &'static [HashMap<&'static str, &'static str>; 6] {
     })
 }
 
-/// Every translated string: the main, Meetings, Labs, Dictation style,
-/// failure, first-run, menu bar, History, Screenshots, and Annotate Agents
-/// rows.
+/// Every translated string: the main, Meetings, Labs, microphone mute,
+/// Dictation style, failure, first-run, menu bar, History, Screenshots, and
+/// Annotate Agents rows.
 pub(super) fn all_translations() -> impl Iterator<Item = &'static (&'static str, [&'static str; 6])>
 {
     TRANSLATIONS
         .iter()
         .chain(meetings::TRANSLATIONS)
         .chain(labs::TRANSLATIONS)
+        .chain(meeting_mute::TRANSLATIONS)
         .chain(style::TRANSLATIONS)
         .chain(signature::TRANSLATIONS)
+        .chain(clipboard_phrase::TRANSLATIONS)
+        .chain(annotate_dictation::TRANSLATIONS)
         .chain(agents::TRANSLATIONS)
         .chain(failures::TRANSLATIONS)
         .chain(onboarding::TRANSLATIONS)
         .chain(menu::TRANSLATIONS)
         .chain(history::TRANSLATIONS)
         .chain(screenshots::TRANSLATIONS)
+        .chain(routing::TRANSLATIONS)
 }
 
 #[cfg(test)]
@@ -421,6 +447,13 @@ mod tests {
         );
         assert_eq!(column_for_code("ru"), super::RUSSIAN_COLUMN);
         assert!(LANGUAGE_CHOICES.contains(&(Some("ru"), "Русский")));
+        assert_eq!(column_for_language_tag("hu-HU"), super::HUNGARIAN_COLUMN);
+        assert_eq!(
+            column_for_language_tag("hu_HU.UTF-8"),
+            super::HUNGARIAN_COLUMN
+        );
+        assert_eq!(column_for_code("hu"), super::HUNGARIAN_COLUMN);
+        assert!(LANGUAGE_CHOICES.contains(&(Some("hu"), "Magyar")));
     }
 
     #[test]
@@ -511,6 +544,15 @@ mod tests {
     }
 
     #[test]
+    fn hungarian_translates_with_its_column() {
+        super::set_current(super::HUNGARIAN_COLUMN);
+        assert_eq!(super::tr("Don't switch"), "Ne váltson");
+        assert_eq!(super::tr_fill("Remove {}?", "x"), "Eltávolítja ezt: x?");
+        super::set_current(super::ENGLISH);
+        assert_eq!(super::tr("Don't switch"), "Don't switch");
+    }
+
+    #[test]
     fn portuguese_translates_with_its_column() {
         super::set_current(super::PORTUGUESE_COLUMN);
         assert_eq!(super::tr("Labs"), "Labs");
@@ -594,6 +636,7 @@ mod tests {
         include_str!("../rune_ui/hud_lab.rs"),
         include_str!("../rune_ui/labs.rs"),
         include_str!("../rune_ui/labs/group.rs"),
+        include_str!("../rune_ui/labs/clipboard_phrase.rs"),
         include_str!("../rune_ui/labs/hud_height.rs"),
         include_str!("../rune_ui/labs/screenshots.rs"),
         include_str!("../rune_ui/labs/signature.rs"),
@@ -605,7 +648,9 @@ mod tests {
         include_str!("../rune_ui/lists.rs"),
         include_str!("../rune_ui/macos_host.rs"),
         include_str!("../rune_ui/meeting_capsules.rs"),
+        include_str!("../rune_ui/meeting_capsules/call_ended.rs"),
         include_str!("../rune_ui/meetings.rs"),
+        include_str!("../rune_ui/meetings/selection.rs"),
         include_str!("../rune_ui/models.rs"),
         include_str!("../rune_ui/found.rs"),
         include_str!("../rune_ui/found_choice.rs"),
@@ -666,10 +711,13 @@ mod tests {
         include_str!("../rune_ui/settings.rs"),
         include_str!("../rune_ui/shortcut_mode.rs"),
         include_str!("../rune_ui/sound_sets.rs"),
+        include_str!("../rune_ui/calls.rs"),
+        include_str!("../rune_ui/meeting_capsules/offer.rs"),
         include_str!("../rune_ui/speech_model.rs"),
         include_str!("../rune_ui/vocabulary.rs"),
         include_str!("../rune_ui/windows_host.rs"),
         include_str!("tray_menu.rs"),
+        include_str!("../updater/presentation.rs"),
         include_str!("../calendar_menu.rs"),
         include_str!("../macos_rune/status_item.rs"),
         include_str!("../rune_ui/history/unified.rs"),
@@ -734,6 +782,22 @@ mod tests {
         assert!(checked > 300, "only {checked} translated strings found");
     }
 
+    /// The refused-paste notice is looked up through a constant, not a `tr`
+    /// literal at its call site, so its table entry is checked here.
+    #[test]
+    fn the_refused_paste_notice_has_every_language() {
+        let table: std::collections::HashMap<_, _> = all_translations().copied().collect();
+        let translations = table
+            .get(crate::paste::POST_EVENT_REFUSED)
+            .expect("the refused paste notice is translated");
+        assert!(
+            translations
+                .iter()
+                .all(|translation| !translation.is_empty()),
+            "the refused paste notice is missing a language"
+        );
+    }
+
     /// The sound picker translates each set's name and character, which are
     /// not literals at the call.
     #[test]
@@ -791,6 +855,7 @@ mod tests {
             ("French", super::french::table()),
             ("Portuguese", super::portuguese::table()),
             ("Russian", super::russian::table()),
+            ("Hungarian", super::hungarian::table()),
         ];
         for english in [
             "Use Menu, Pause, or Scroll Lock as a shortcut by itself, such as Caps Lock remapped to Menu",

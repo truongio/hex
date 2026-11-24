@@ -1,7 +1,7 @@
 import Foundation
 
-/// How hard the keys' haptic tap is (Settings › Keyboard › Strength). Medium is meant to match
-/// Apple's keyboard (testers found Hex's, a 0.65 light impact, too weak beside it).
+/// How hard the keys' haptic tap is (Settings › Keyboard › Strength). Light by default: testers
+/// found Medium, the default until TestFlight in November 2026, too strong.
 nonisolated enum KeyHapticStrength: String, CaseIterable, Sendable {
     case light
     case medium
@@ -89,6 +89,7 @@ struct FullKeyboardSettings {
         static let keyboardThemes = "experiments.keyboardThemes"
         static let keyboardTheme = "settings.keyboardTheme"
         static let swipeTyping = "experiments.swipeTyping"
+        static let swipeMoreLanguages = "experiments.swipeMoreLanguages"
         static let swipeDeleteLetterByLetter = "experiments.swipeDeleteLetterByLetter"
         static let twoThumbSelection = "experiments.twoThumbSelection"
         static let hideWordSuggestions = "experiments.hideWordSuggestions"
@@ -99,6 +100,7 @@ struct FullKeyboardSettings {
         static let dvorakPunctuation = "experiments.dvorakPunctuation"
         static let commaPeriodKeys = "experiments.commaPeriodKeys"
         static let quickAccents = "experiments.quickAccents"
+        static let emojiShortcodes = "experiments.emojiShortcodes"
     }
 
     private let defaults: UserDefaults?
@@ -175,6 +177,14 @@ struct FullKeyboardSettings {
         return TypingDecoderModel.bundled(language.rawValue)
     }
 
+    /// Whether a swipe reads `language`'s layout: English and Spanish as ever, and with
+    /// Settings › Experiments › Swipe typing in more languages on every language
+    /// `typingModel(for:)` has a model for (French (France), Polish, and German while its model
+    /// is chosen). Elsewhere a drag stays a slide to another key.
+    func swipesIn(_ language: KeyboardLanguage) -> Bool {
+        swipeMoreLanguages ? typingModel(for: language) != nil : language.supportsSwipeTyping
+    }
+
     /// Suggestions and autocorrect may offer swear words (`OffensiveWords`); slurs never.
     /// Off by default, like Apple's keyboard.
     var suggestSwearWords: Bool {
@@ -194,10 +204,10 @@ struct FullKeyboardSettings {
         nonmutating set { defaults?.set(newValue, forKey: Key.haptics) }
     }
 
-    /// Settings › Keyboard › Strength, under Haptics: how hard each key's tap is. Medium, the
-    /// default, is meant to feel like Apple's keyboard.
+    /// Settings › Keyboard › Strength, under Haptics: how hard each key's tap is. Light until
+    /// you choose one; a choice is kept, whichever it is.
     var hapticStrength: KeyHapticStrength {
-        get { defaults?.string(forKey: Key.hapticStrength).flatMap(KeyHapticStrength.init(rawValue:)) ?? .medium }
+        get { defaults?.string(forKey: Key.hapticStrength).flatMap(KeyHapticStrength.init(rawValue:)) ?? .light }
         nonmutating set { defaults?.set(newValue.rawValue, forKey: Key.hapticStrength) }
     }
 
@@ -268,12 +278,22 @@ struct FullKeyboardSettings {
     }
 
     /// Settings › Keyboard › Swipe typing: slide through a word's letters to type it, on the
-    /// English and Spanish layouts (`SwipeTyping`). On by default. Stored as
+    /// English and Spanish layouts (`SwipeTyping`), and with Swipe typing in more languages on
+    /// also every layout with a typing model (`swipesIn(_:)`). On by default. Stored as
     /// `experiments.swipeTyping`, from when it was an experiment (off by default): unset or
     /// true is on and false off, so testers who turned it off keep it off.
     var swipeTyping: Bool {
         get { defaults?.object(forKey: Key.swipeTyping) as? Bool ?? true }
         nonmutating set { defaults?.set(newValue, forKey: Key.swipeTyping) }
+    }
+
+    /// Settings › Experiments › Swipe typing in more languages: a swipe reads the layout
+    /// language's own word list wherever one is bundled, not only on English and Spanish (see
+    /// `swipesIn(_:)`). Off by default, like every experiment. Stored as
+    /// `experiments.swipeMoreLanguages`; off, only English and Spanish swipe as before.
+    var swipeMoreLanguages: Bool {
+        get { defaults?.object(forKey: Key.swipeMoreLanguages) as? Bool ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Key.swipeMoreLanguages) }
     }
 
     /// Settings › Experiments › Delete swiped words letter by letter: delete right after a swipe
@@ -339,6 +359,17 @@ struct FullKeyboardSettings {
     var quickAccents: Bool {
         get { defaults?.bool(forKey: Key.quickAccents) ?? false }
         nonmutating set { defaults?.set(newValue, forKey: Key.quickAccents) }
+    }
+
+    /// Settings › Experiments › Emoji shortcodes: the strip offers emoji for a ":name" typed
+    /// after a space or at the start of the field (":pizza"), a tap takes the whole token back
+    /// and types the emoji, and the closing ":" of a name typed in full (":pizza:") types it
+    /// instead. Off by default, so a keyboard without it types colons exactly as before; without
+    /// Full Access the App Group reads false, which is off. Stored as
+    /// `experiments.emojiShortcodes`.
+    var emojiShortcodes: Bool {
+        get { defaults?.object(forKey: Key.emojiShortcodes) as? Bool ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Key.emojiShortcodes) }
     }
 
     /// Settings › Keyboard › Auto-start: when the dictation bar starts dictating by itself.

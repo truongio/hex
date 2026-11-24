@@ -31,6 +31,8 @@ internal class SpatialDecoder(val model: TypingModel) {
         if (history.weight() == 0.0) return base
         return history.blend(base, if (previous >= 0) model.text(previous) else null, model.text(word))
     }
+    /** Keyboard › Swipe typing's reader for this language, made at the first swipe. */
+    val swipe by lazy { SwipeReader(this) }
     /** `spaceCost`: what reading this tap as a space the finger missed costs when it landed on
      * the bottom row's upper half, or infinity (`spaceTapCost`). */
     class Tap(val cost: DoubleArray, val choices: IntArray, val belowLetters: Boolean, val missedSpaceCost: Double,

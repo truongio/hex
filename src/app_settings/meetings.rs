@@ -16,6 +16,14 @@ pub enum MeetingIndicatorCorner {
 }
 
 impl MeetingIndicatorCorner {
+    #[cfg(test)]
+    pub const ALL: [Self; 4] = [
+        Self::TopRight,
+        Self::TopLeft,
+        Self::BottomRight,
+        Self::BottomLeft,
+    ];
+
     pub const fn is_right(self) -> bool {
         matches!(self, Self::TopRight | Self::BottomRight)
     }
@@ -54,11 +62,23 @@ pub struct MeetingSettings {
     pub show_recording_indicator: bool,
     /// Screen corner the floating recording indicator snaps to after dragging.
     pub recording_indicator_corner: MeetingIndicatorCorner,
+    /// The display the floating recording indicator was last dragged to,
+    /// named the way the OS names it (`\\.\DISPLAY2` on Windows, the
+    /// `CGDirectDisplayID` on macOS); `None` is the primary display.
+    /// Left out of the file while unset, so an older build reads this file
+    /// as before, and read only while Labs › Indicator on any display is
+    /// on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_indicator_display: Option<String>,
     /// What to do when a call from each website or app is detected. Older
     /// files only had a `never_offer` list, whose entries carry no `policy`
-    /// and so read as Never offer.
+    /// and so read as Don't offer.
     #[serde(alias = "never_offer")]
     pub providers: Vec<MeetingProviderChoice>,
+    /// What to do for a call from a website or app with no entry in
+    /// `providers`. Older files have none and read as Ask, which is what
+    /// every such call did before.
+    pub default_policy: MeetingPolicy,
     /// Reminders before calendar meetings (macOS). Off until the user
     /// connects a calendar.
     pub calendar: CalendarSettings,
@@ -112,6 +132,9 @@ pub enum MeetingSummaries {
 }
 
 impl MeetingSummaries {
+    #[cfg(test)]
+    pub const ALL: [Self; 3] = [Self::Off, Self::Mac, Self::OpenCode];
+
     /// On this Mac on macOS, otherwise off.
     pub const fn platform_default() -> Self {
         if cfg!(target_os = "macos") {
@@ -259,7 +282,7 @@ impl CalendarSettings {
     }
 }
 
-/// The call services Settings always lists, by provider key (the app's
+/// The common call services Hex names, by provider key (the app's
 /// canonical bundle ID, or the website host for browser services) and
 /// English name.
 pub const KNOWN_MEETING_PROVIDERS: [(&str, &str); 8] = [
@@ -287,28 +310,47 @@ pub const MORE_MEETING_PROVIDERS: [(&str, &str); 10] = [
     ("web.groupme.com", "GroupMe"),
 ];
 
-/// The providers Settings always lists: the common services, then the rest.
-pub fn known_meeting_providers() -> impl Iterator<Item = (&'static str, &'static str)> {
-    KNOWN_MEETING_PROVIDERS
-        .into_iter()
-        .chain(MORE_MEETING_PROVIDERS)
-}
-
-/// What Hex does when it detects a call from a provider.
+/// What Hex does when it detects a call from a provider. Shown as Ask each
+/// time, Always record, and Don't offer; the stored names predate
+/// those and stay so older builds can read the file.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum MeetingPolicy {
     /// Offer to record.
     #[default]
-    Ask,
+    Ask = 0,
     /// Start recording without an offer.
-    AlwaysRecord,
+    AlwaysRecord = 1,
     /// Neither offer nor record.
-    NeverOffer,
+    NeverOffer = 2,
+}
+
+impl MeetingPolicy {
+    /// In the order Settings lists them.
+    pub const ALL: [Self; 3] = [Self::Ask, Self::AlwaysRecord, Self::NeverOffer];
+
+    /// The English name every surface shows (through `tr`).
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Ask => "Ask each time",
+            Self::AlwaysRecord => "Always record",
+            Self::NeverOffer => "Don't offer",
+        }
+    }
+
+    pub(super) const fn decode(value: u8) -> Self {
+        match value {
+            1 => Self::AlwaysRecord,
+            2 => Self::NeverOffer,
+            _ => Self::Ask,
+        }
+    }
 }
 
 /// A website host or an app's canonical bundle ID, the name shown in
-/// Settings, and the user's choice for its calls. Unlisted providers Ask.
+/// Settings, and the user's choice for its calls. Unlisted providers follow
+/// [`MeetingSettings::default_policy`].
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MeetingProviderChoice {
     pub key: String,
@@ -334,7 +376,9 @@ impl Default for MeetingSettings {
             summarize_with_opencode: None,
             show_recording_indicator: DEFAULT_SHOW_RECORDING_INDICATOR,
             recording_indicator_corner: MeetingIndicatorCorner::TopRight,
+            recording_indicator_display: None,
             providers: Vec::new(),
+            default_policy: MeetingPolicy::Ask,
             calendar: CalendarSettings::default(),
             retention: None,
             audio_retention: None,
@@ -351,6 +395,33 @@ impl MeetingSettings {
     pub fn available(&self) -> bool {
         crate::labs::Feature::Meetings.managed().is_none()
             && (crate::DEVELOPER_FEATURES_ENABLED || self.enabled)
+    }
+
+    /// Changes the default. Websites and apps whose answer was the old
+    /// default, which Settings showed as following it, go on following it.
+    pub fn set_default_policy(&mut self, policy: MeetingPolicy) {
+        let old = self.default_policy;
+        // Kept rather than removed: a website's entry outranks its browser's.
+        for choice in &mut self.providers {
+            if choice.policy == old {
+                choice.policy = policy;
+            }
+        }
+        self.default_policy = policy;
+    }
+
+    /// The choice for calls from `key`: its own, else the default.
+    pub fn policy_for(&self, key: &str) -> MeetingPolicy {
+        self.providers
+            .iter()
+            .find(|choice| choice.key == key)
+            .map_or(self.default_policy, |choice| choice.policy)
+    }
+
+    /// Whether `key` answers differently from the default (Settings shows
+    /// those with their icon and their value undimmed).
+    pub fn has_own_answer(&self, key: &str) -> bool {
+        self.policy_for(key) != self.default_policy
     }
 
     pub fn resolved_output_folder(&self) -> PathBuf {
@@ -390,6 +461,17 @@ pub fn meeting_indicator_corner() -> MeetingIndicatorCorner {
     MeetingIndicatorCorner::decode(MEETING_INDICATOR_CORNER.load(Ordering::Acquire))
 }
 
+/// The display the recording capsule was last dragged to (Labs › Indicator
+/// on any display): the OS's own name for it, or `None` for the primary
+/// display. The capsules ignore it while that lab is off.
+pub fn saved_meeting_indicator_display() -> Option<String> {
+    MEETING_INDICATOR_DISPLAY
+        .get_or_init(Default::default)
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone()
+}
+
 /// The user's choices for detected calls, by website or app.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn meeting_provider_choices() -> Vec<MeetingProviderChoice> {
@@ -400,8 +482,12 @@ pub fn meeting_provider_choices() -> Vec<MeetingProviderChoice> {
         .clone()
 }
 
-/// The connected calendar's reminder settings, as last applied.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+/// The choice for detected calls from websites and apps with none of their
+/// own, as last applied.
+pub fn meeting_default_policy() -> MeetingPolicy {
+    MeetingPolicy::decode(MEETING_DEFAULT_POLICY.load(Ordering::Acquire))
+}
+
 /// [`MeetingSettings::retention`] for the running meeting controller.
 /// The retention the user chose, `None` until they choose. A process that
 /// never loaded settings (`hex mcp`, `hex meetings`) reads it from
@@ -465,9 +551,8 @@ fn audio_retention_in(settings: &serde_json::Value) -> Option<MeetingRetention> 
         .flatten()
 }
 
-/// Meetings › Settings' Stop when the call ends, as last applied (macOS;
-/// read on each pass of the meeting controller).
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+/// Meetings › Settings' Stop when the call ends, as last applied (read on
+/// each pass of the meeting controller).
 pub fn meeting_stop_when_call_ends() -> bool {
     MEETING_STOP_WHEN_CALL_ENDS.load(Ordering::Acquire)
 }
@@ -492,10 +577,17 @@ pub fn calendar_settings() -> CalendarSettings {
         .clone()
 }
 
-/// Sets one provider's policy; returns whether the settings changed.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+/// Sets one provider's policy; returns whether the settings changed. A
+/// Teams page's answer used to be saved under its own host: the Teams app's
+/// new answer replaces it rather than being shadowed by it.
 pub fn set_meeting_provider(meetings: &mut MeetingSettings, choice: MeetingProviderChoice) -> bool {
-    match meetings
+    let before = meetings.providers.len();
+    meetings.providers.retain(|known| {
+        known.key == choice.key
+            || crate::meeting::detection::provider_key_for_site(&known.key) != choice.key
+    });
+    let dropped = meetings.providers.len() != before;
+    let changed = match meetings
         .providers
         .iter_mut()
         .find(|known| known.key == choice.key)
@@ -509,7 +601,8 @@ pub fn set_meeting_provider(meetings: &mut MeetingSettings, choice: MeetingProvi
             meetings.providers.push(choice);
             true
         }
-    }
+    };
+    dropped || changed
 }
 
 /// Saves a choice made from a meeting capsule while the Settings window is
@@ -529,17 +622,24 @@ pub fn save_meeting_provider(choice: MeetingProviderChoice) {
     }
 }
 
-/// Saves the corner the recording capsule was dragged to.
-pub fn save_meeting_indicator_corner(corner: MeetingIndicatorCorner) {
+/// Saves where the recording capsule was dragged to: its corner, and the
+/// display it landed on (Labs › Indicator on any display; `None` is the
+/// primary display). Off, the capsules pass the display they already read,
+/// so that field never changes.
+pub fn save_meeting_indicator_anchor(corner: MeetingIndicatorCorner, display: Option<&str>) {
     match AppSettings::load() {
         Ok(mut settings) => {
-            if settings.meetings.recording_indicator_corner == corner {
+            let display = display.map(str::to_owned);
+            if settings.meetings.recording_indicator_corner == corner
+                && settings.meetings.recording_indicator_display == display
+            {
                 return;
             }
             let base = settings.clone();
             settings.meetings.recording_indicator_corner = corner;
+            settings.meetings.recording_indicator_display = display;
             if let Err(error) = base.update(&settings) {
-                tracing::warn!(%error, "could not save the recording capsule's corner");
+                tracing::warn!(%error, "could not save where the recording capsule rests");
             }
         }
         Err(error) => tracing::warn!(%error, "could not load settings to save the capsule corner"),
@@ -560,26 +660,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn settings_lists_the_common_providers_first_then_the_rest() {
-        let on = known_meeting_providers().collect::<Vec<_>>();
-        assert_eq!(on[..KNOWN_MEETING_PROVIDERS.len()], KNOWN_MEETING_PROVIDERS);
-        assert_eq!(
-            on.len(),
-            KNOWN_MEETING_PROVIDERS.len() + MORE_MEETING_PROVIDERS.len()
-        );
-        assert!(on.contains(&("org.whispersystems.signal-desktop", "Signal")));
-        assert!(on.contains(&("ru.keepcoder.Telegram", "Telegram")));
-        assert!(on.contains(&("com.tencent.xinWeChat", "WeChat")));
-        assert!(on.contains(&("jp.naver.line.mac", "LINE")));
-        assert!(on.contains(&("com.webex.meetingmanager", "Webex")));
-        assert!(on.contains(&("im.riot.app", "Element")));
-        assert!(on.contains(&("com.apple.mobilephone", "Phone")));
-        assert!(on.contains(&("voice.google.com", "Google Voice")));
-        assert!(on.contains(&("messenger.com", "Messenger")));
-        assert!(on.contains(&("web.groupme.com", "GroupMe")));
-    }
-
-    #[test]
     fn an_unmigrated_file_keeps_audio_retention_only_with_its_lab() {
         use MeetingRetention::Day;
         let read = |json: &str| audio_retention_in(&serde_json::from_str(json).unwrap());
@@ -596,5 +676,112 @@ mod tests {
         );
         assert_eq!(read(r#"{"migrations":["meeting-labs-settings"]}"#), None);
         assert_eq!(MeetingSettings::default().audio_retention, None);
+    }
+
+    /// A file from before the default reads as Ask, so every website or app
+    /// without its own answer goes on asking, as it did.
+    #[test]
+    fn an_older_file_keeps_asking_for_unlisted_calls() {
+        let meetings: MeetingSettings = serde_json::from_str(
+            r#"{"providers":[{"key":"us.zoom.xos","label":"Zoom","policy":"always_record"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(meetings.default_policy, MeetingPolicy::Ask);
+        assert_eq!(meetings.policy_for("example.com"), MeetingPolicy::Ask);
+        assert_eq!(
+            meetings.policy_for("us.zoom.xos"),
+            MeetingPolicy::AlwaysRecord
+        );
+        assert!(meetings.has_own_answer("us.zoom.xos"));
+        assert!(!meetings.has_own_answer("example.com"));
+    }
+
+    /// Answers that followed the old default follow the new one; others stay.
+    #[test]
+    fn changing_the_default_moves_the_answers_that_followed_it() {
+        let choice = |key: &str, policy| MeetingProviderChoice {
+            key: key.into(),
+            label: key.into(),
+            policy,
+        };
+        let mut meetings = MeetingSettings {
+            providers: vec![
+                choice("us.zoom.xos", MeetingPolicy::Ask),
+                choice("meet.google.com", MeetingPolicy::NeverOffer),
+            ],
+            ..Default::default()
+        };
+        meetings.set_default_policy(MeetingPolicy::AlwaysRecord);
+        assert_eq!(
+            meetings.policy_for("us.zoom.xos"),
+            MeetingPolicy::AlwaysRecord
+        );
+        assert!(!meetings.has_own_answer("us.zoom.xos"));
+        assert_eq!(
+            meetings.policy_for("meet.google.com"),
+            MeetingPolicy::NeverOffer
+        );
+        assert_eq!(
+            meetings.policy_for("example.com"),
+            MeetingPolicy::AlwaysRecord
+        );
+        assert_eq!(meetings.providers.len(), 2);
+    }
+
+    /// An older settings file has no `recording_indicator_display`: the
+    /// capsules stay on the primary display, and the field stays out of the
+    /// file until a capsule lands on one.
+    #[test]
+    fn a_saved_file_without_the_indicator_display_stays_on_the_primary() {
+        let settings: MeetingSettings = serde_json::from_str(
+            r#"{"show_recording_indicator":true,"recording_indicator_corner":"bottom_left"}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.recording_indicator_display, None);
+        assert_eq!(
+            settings.recording_indicator_corner,
+            MeetingIndicatorCorner::BottomLeft
+        );
+        let written = serde_json::to_value(&settings).unwrap();
+        assert!(written.get("recording_indicator_display").is_none());
+        // A display a capsule landed on round trips.
+        let landed = MeetingSettings {
+            recording_indicator_display: Some(r"\\.\DISPLAY2".into()),
+            ..Default::default()
+        };
+        let written = serde_json::to_value(&landed).unwrap();
+        assert_eq!(written["recording_indicator_display"], r"\\.\DISPLAY2");
+        let read: MeetingSettings = serde_json::from_value(written).unwrap();
+        assert_eq!(
+            read.recording_indicator_display,
+            landed.recording_indicator_display
+        );
+    }
+
+    /// A Teams page's old answer under its own host gives way to the Teams
+    /// app's new one, which would otherwise never apply to that page.
+    #[test]
+    fn a_teams_answer_replaces_the_one_saved_for_a_teams_page() {
+        let mut meetings = MeetingSettings {
+            providers: vec![MeetingProviderChoice {
+                key: "teams.live.com".into(),
+                label: "teams.live.com".into(),
+                policy: MeetingPolicy::NeverOffer,
+            }],
+            ..Default::default()
+        };
+        assert!(set_meeting_provider(
+            &mut meetings,
+            MeetingProviderChoice {
+                key: "com.microsoft.teams2".into(),
+                label: "Microsoft Teams".into(),
+                policy: MeetingPolicy::AlwaysRecord,
+            },
+        ));
+        assert_eq!(meetings.providers.len(), 1);
+        assert_eq!(
+            meetings.policy_for("com.microsoft.teams2"),
+            MeetingPolicy::AlwaysRecord
+        );
     }
 }

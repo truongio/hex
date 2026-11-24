@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Resources
 
 internal enum class Style { Polished, Casual, Notes, Verbatim }
-internal enum class Engine { Whisper, Parakeet }
 /** A keyboard layout's language: its keys, accents and typing model. Dictation languages are
  * [DictationLanguage]; a language can be dictated without a layout of its own. */
 internal enum class Spoken(val code: String, val label: String) {
@@ -31,12 +30,43 @@ internal enum class DictationLanguage(val code: String, val label: String, val l
     }
 }
 
+/** The layout whose typing model the keyboard reads: the one pinned in Keyboard › Keyboard layout, else the
+ * dictation language's own. Null when the keys are only English's stand-in for a language with no layout
+ * (none while Hex has English and Swedish only). */
+internal fun typingLayout(pinned: Spoken?, spoken: DictationLanguage): Spoken? = pinned ?: spoken.layout
+
 internal data class SpeechOptions(val style: Style, val spoken: DictationLanguage, val clean: Boolean, val translate: Boolean,
                                    val lowercase: Boolean = false, val endWithPeriod: Boolean = true,
                                    val formatLists: Boolean = false, val spokenPunctuation: Boolean = false,
-                                   val vocabulary: List<String> = emptyList(), val engine: Engine = Engine.Whisper)
-internal class SpeechPreferences(context: Context) {
+                                   /** Custom terms plus any learned fixed word with a capital: formatting forces
+                                    * exactly these spellings, never the plain learned words. */
+                                   val vocabulary: List<String> = emptyList(), val fastEnglish: Boolean = false,
+                                   /** Labs › Learn from my fixes' active fixes, applied to the raw transcript. */
+                                   val fixes: List<DictationFix> = emptyList(),
+                                   /** Whether the lab was on when the dictation started; its tracking is keyboard-only. */
+                                   val learnFixes: Boolean = false,
+                                   /** What the recognizers hear: [vocabulary] unless the lab adds learned words.
+                                    * Never used as forced spellings. */
+                                   val hints: List<String> = emptyList(),
+                                   /** Dictation › Parakeet: NVIDIA's multilingual Parakeet, once its model is on the phone. */
+                                   val multilingual: Boolean = false) {
+    /** Whisper's prompt and Parakeet's vocabulary. A translated dictation gets only the custom terms, and off
+     * the lab's hints are the terms exactly as they always were. */
+    val recognitionHints get() = if (!learnFixes || translate) vocabulary else hints
+}
+
+/** The recognizers' hints: the custom terms alone unless the lab is on and the dictation isn't translated,
+ * then the terms and the learned spellings, deduplicated and capped. */
+internal fun recognitionHints(terms: List<String>, learned: List<DictationFix>, learning: Boolean, translated: Boolean) =
+    if (learning && !translated) DictationFixes.hints(terms, learned) else terms
+
+/** The spellings formatting forces: the custom terms, and only learned words that carry a capital. A plain
+ * learned word ("there") is a hint, never a spelling, so it cannot rewrite another word that sounds the same. */
+internal fun forcedSpellings(terms: List<String>, learned: List<DictationFix>, learning: Boolean, translated: Boolean) =
+    if (!learning || translated) terms else terms + DictationFixes.spellings(learned)
+internal class SpeechPreferences(private val context: Context) {
     private val prefs = context.getSharedPreferences("speech", Context.MODE_PRIVATE)
+    private val fixes by lazy { DictationFixStore(context) }
     var style: Style
         get() = Style.entries.firstOrNull { it.name == prefs.getString("style", null) } ?: Style.Polished
         set(value) { prefs.edit().putString("style", value.name).apply() }
@@ -79,11 +109,35 @@ internal class SpeechPreferences(context: Context) {
     var vocabularyTerms: List<String>
         get() = prefs.getString("vocabularyTerms", null)?.split('\n').orEmpty().filter(String::isNotEmpty)
         set(value) { prefs.edit().putString("vocabularyTerms", VocabularySpelling.sanitize(value).joinToString("\n")).apply() }
-    // Dictation › Parakeet: the faster engine, once its model is on the phone.
-    var engine: Engine
-        get() = Engine.entries.firstOrNull { it.name == prefs.getString("engine", null) } ?: Engine.Whisper
-        set(value) { prefs.edit().putString("engine", value.name).apply() }
-    fun options(nextEnglish: Boolean?) = SpeechOptions(style, spoken, clean,
-        translation && spoken != DictationLanguage.English && (nextEnglish ?: true), lowercase, endWithPeriod, formatLists, spokenPunctuation,
-        if (customVocabulary) vocabularyTerms else emptyList(), engine)
+    // Labs › Faster English dictation, off by default: English dictations use the downloaded faster model once it is there.
+    var fastEnglish: Boolean
+        get() = prefs.getBoolean("fastEnglish", false)
+        set(value) { prefs.edit().putBoolean("fastEnglish", value).apply() }
+    // Dictation › Parakeet: the multilingual engine, once its model is on the phone. Stored as the engine's name.
+    var multilingual: Boolean
+        get() = prefs.getString("engine", null) == "Parakeet"
+        set(value) { prefs.edit().putString("engine", if (value) "Parakeet" else "Whisper").apply() }
+    // Labs › Learn from my fixes: learn from dictation edits and apply what was learned, off by default.
+    var learnFixes: Boolean
+        get() = prefs.getBoolean("learnFixes", false)
+        set(value) { prefs.edit().putBoolean("learnFixes", value).apply() }
+    // Labs › Signature: the line added to each keyboard dictation, off by default.
+    var signature: Boolean
+        get() = prefs.getBoolean("signature", false)
+        set(value) { prefs.edit().putBoolean("signature", value).apply() }
+    var signatureText: String
+        get() = prefs.getString("signatureText", Signature.DEFAULT_TEXT)
+            ?.takeIf { Signature.textProblem(it) == null }?.trim() ?: Signature.DEFAULT_TEXT
+        set(value) { prefs.edit().putString("signatureText", value).apply() }
+    fun options(nextEnglish: Boolean?): SpeechOptions {
+        val translated = translation && spoken != DictationLanguage.English && (nextEnglish ?: true)
+        // A translated dictation is English the model wrote: nothing learned applies to it, and it hints nothing.
+        val learned = if (learnFixes && !translated) fixes.active() else emptyList()
+        val terms = if (customVocabulary) vocabularyTerms else emptyList()
+        // Formatting forces the spellings in vocabulary. Learned words join it only when they carry a capital,
+        // as iOS's spellings do; their other words are recognition hints alone.
+        val vocabulary = forcedSpellings(terms, learned, learnFixes, translated)
+        return SpeechOptions(style, spoken, clean, translated, lowercase, endWithPeriod, formatLists, spokenPunctuation,
+            vocabulary, fastEnglish, learned, learnFixes, recognitionHints(terms, learned, learnFixes, translated), multilingual)
+    }
 }

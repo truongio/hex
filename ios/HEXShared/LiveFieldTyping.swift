@@ -7,6 +7,8 @@ import UIKit
 /// before the cursor still ends with it. Once it doesn't (the person or the app changed the
 /// text, moved the cursor or selected something, or the app reports no text), it stops for this
 /// dictation and leaves the field alone: the dictation then goes in at the cursor as without it.
+/// One change is different: the app emptying the field while it ends with the words is a send
+/// (`wasSent`), and the keyboard goes on listening as a fresh dictation.
 @MainActor
 final class LiveFieldTyping {
     private let target: KeyboardTextTarget
@@ -22,13 +24,15 @@ final class LiveFieldTyping {
     /// Nil where it never types: secure, password, one-time code and card number fields, with
     /// text selected, or a field with text whose app reports none (nothing could be checked).
     init?(target: KeyboardTextTarget) {
-        guard Self.mayType(secure: target.isSecureTextEntry, content: target.textContentType, selected: target.selectedText) else {
-            return nil
-        }
-        let before = target.documentContextBeforeInput
-        guard before != nil || !target.hasText else { return nil }
+        guard Self.types(in: target) else { return nil }
         self.target = target
-        base = before
+        base = target.documentContextBeforeInput
+    }
+
+    /// Whether it would type in `target` as it is now (`init?(target:)`).
+    static func types(in target: KeyboardTextTarget) -> Bool {
+        mayType(secure: target.isSecureTextEntry, content: target.textContentType, selected: target.selectedText)
+            && (target.documentContextBeforeInput != nil || !target.hasText)
     }
 
     /// Words typed in an earlier keyboard that hid before the dictation went in, resumed while
@@ -39,6 +43,13 @@ final class LiveFieldTyping {
         self.target = target
         base = String(before.dropLast(typed.count))
         self.typed = typed
+    }
+
+    /// The app emptied the field while it still ended with the words (a chat's Send, or select
+    /// all and delete): they went out as they were. An edit that leaves other text isn't one.
+    var wasSent: Bool {
+        guard !stopped, !typed.isEmpty, !target.hasText else { return false }
+        return (target.documentContextBeforeInput ?? "").isEmpty && (target.documentContextAfterInput ?? "").isEmpty
     }
 
     static func mayType(secure: Bool?, content: UITextContentType?, selected: String?) -> Bool {

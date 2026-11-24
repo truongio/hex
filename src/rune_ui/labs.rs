@@ -6,6 +6,7 @@
 //! Voice Filter, Playground, Modes editor) joins the main sidebar while on
 //! and is hidden while off.
 
+mod clipboard_phrase;
 mod group;
 #[cfg(target_os = "macos")]
 mod hud_height;
@@ -24,7 +25,7 @@ use rune::{El, Icon, TextEdit, Tx, row, text};
 pub(super) use self::store::{page, search_field, tabs};
 use super::controls::{self, Paint};
 use super::icons::{
-    BOOK, CALENDAR, CAMERA, CLOCK, FOLDER, GLOBE, KEYBOARD, MOUSE, PANEL, SPARKLES, TERMINAL,
+    BOOK, CALENDAR, CAMERA, CLOCK, FOLDER, GLOBE, KEYBOARD, MIC, MOUSE, PANEL, SPARKLES, TERMINAL,
     TIMER, WAVE,
 };
 use super::sidebar::{NAV_ROW_GAP, NAV_ROW_HEIGHT, VOICE_FILTER_ICON};
@@ -233,6 +234,11 @@ pub(super) struct Store {
     pub(super) signature: TextEdit,
     /// Whether `signature` started from the saved line.
     pub(super) signature_synced: bool,
+    /// Labs › Clipboard phrase's words while it's on: a draft, so invalid
+    /// words stay in its field instead of replacing the saved phrase.
+    pub(super) clipboard_phrase: TextEdit,
+    /// Whether `clipboard_phrase` started from the saved phrase.
+    pub(super) clipboard_phrase_synced: bool,
     /// Labs › HUD height's slider while it drags: the point gap shown
     /// before release saves it.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -240,6 +246,15 @@ pub(super) struct Store {
     /// The lab a `hex://labs/<feature>` link named and when, so its card
     /// shows a focus border for [`FLASH`].
     pub(super) flash: Option<(&'static str, std::time::Instant)>,
+}
+
+/// Which lab fields hold typing the saved settings don't have.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct LabDrafts {
+    phrase: bool,
+    stop_phrase: bool,
+    signature: bool,
+    clipboard_phrase: bool,
 }
 
 /// How long a linked lab's card keeps its focus border.
@@ -357,16 +372,80 @@ impl Store {
         draft != settings.labs.signature_text
     }
 
+    /// Starts Clipboard phrase's field at `saved` when Labs opens or its lab
+    /// turns on.
+    pub(super) fn sync_clipboard_phrase(&mut self, saved: &str) {
+        self.clipboard_phrase = TextEdit::new(saved.to_owned());
+        self.clipboard_phrase_synced = true;
+    }
+
+    /// Adopts a phrase another writer saved, unless the field holds an
+    /// unsaved draft.
+    pub(super) fn rebase_clipboard_phrase(&mut self, before: &str, after: &str) {
+        if !self.clipboard_phrase_synced || self.clipboard_phrase.text.trim() == before {
+            self.sync_clipboard_phrase(after);
+        }
+    }
+
+    /// The phrase Clipboard phrase's `settings` should hold: the draft when
+    /// it passes validation. An invalid draft never replaces the saved
+    /// phrase.
+    pub(super) fn project_clipboard_phrase(&self, settings: &mut crate::app_settings::AppSettings) {
+        // Until the field starts from the saved phrase, it holds no draft.
+        if !self.clipboard_phrase_synced {
+            return;
+        }
+        let draft = self.clipboard_phrase.text.trim();
+        if crate::dictation::voice_prompt::phrase_problem(draft).is_none() {
+            settings.labs.clipboard_phrase_text = draft.to_owned();
+        }
+    }
+
+    /// Whether Clipboard phrase's field holds typing the saved settings
+    /// don't have. A lab that's off has no draft to keep.
+    pub(super) fn clipboard_phrase_dirty(
+        &self,
+        settings: &crate::app_settings::AppSettings,
+    ) -> bool {
+        if !self.clipboard_phrase_synced || !settings.labs.clipboard_phrase {
+            return false;
+        }
+        let draft = self.clipboard_phrase.text.trim();
+        !draft.is_empty() && draft != settings.labs.clipboard_phrase_text
+    }
+
+    /// Applies every lab field's draft that passes validation to `settings`.
+    pub(super) fn project(&self, settings: &mut crate::app_settings::AppSettings) {
+        self.project_phrase(settings);
+        self.project_stop_phrase(settings);
+        self.project_signature(settings);
+        self.project_clipboard_phrase(settings);
+    }
+
+    /// Which lab fields hold typing `settings` don't have yet.
+    pub(super) fn drafts(&self, settings: &crate::app_settings::AppSettings) -> LabDrafts {
+        LabDrafts {
+            phrase: self.phrase_dirty(settings),
+            stop_phrase: self.stop_phrase_dirty(settings),
+            signature: self.signature_dirty(settings),
+            clipboard_phrase: self.clipboard_phrase_dirty(settings),
+        }
+    }
+
     /// Adopts the lab fields another write saved: a lab toggled elsewhere
     /// resyncs its field, and a saved text change rebases one with no draft.
-    /// `drafts` is (phrase, stop phrase, signature).
     pub(super) fn follow_saved(
         &mut self,
         before: &crate::app_settings::LabsSettings,
         after: &crate::app_settings::LabsSettings,
-        drafts: (bool, bool, bool),
+        drafts: LabDrafts,
     ) {
-        let (phrase, stop_phrase, signature) = drafts;
+        let LabDrafts {
+            phrase,
+            stop_phrase,
+            signature,
+            clipboard_phrase,
+        } = drafts;
         if after.voice_prompt != before.voice_prompt {
             self.sync_phrase(&after.voice_prompt_phrase);
         } else if !phrase && after.voice_prompt_phrase != before.voice_prompt_phrase {
@@ -382,6 +461,14 @@ impl Store {
         } else if !signature && after.signature_text != before.signature_text {
             self.rebase_signature(&before.signature_text, &after.signature_text);
         }
+        if after.clipboard_phrase != before.clipboard_phrase {
+            self.sync_clipboard_phrase(&after.clipboard_phrase_text);
+        } else if !clipboard_phrase && after.clipboard_phrase_text != before.clipboard_phrase_text {
+            self.rebase_clipboard_phrase(
+                &before.clipboard_phrase_text,
+                &after.clipboard_phrase_text,
+            );
+        }
     }
 
     /// Adopts the lab texts a save committed, each unless its field holds a
@@ -394,6 +481,7 @@ impl Store {
         self.rebase_phrase(&before.voice_prompt_phrase, &after.voice_prompt_phrase);
         self.rebase_stop_phrase(&before.stop_phrase_text, &after.stop_phrase_text);
         self.rebase_signature(&before.signature_text, &after.signature_text);
+        self.rebase_clipboard_phrase(&before.clipboard_phrase_text, &after.clipboard_phrase_text);
     }
 }
 
@@ -465,6 +553,8 @@ fn open(ui: &mut Ui, tx: &mut Tx) {
         .sync_stop_phrase(&ui.settings.labs.stop_phrase_text);
     ui.lab_store
         .sync_signature(&ui.settings.labs.signature_text);
+    ui.lab_store
+        .sync_clipboard_phrase(&ui.settings.labs.clipboard_phrase_text);
     tx.settle();
 }
 
@@ -619,6 +709,11 @@ fn rows(ui: &Ui) -> Vec<Row> {
     rows.push(row(Feature::Appearance, Some(&PANEL)));
     if caps.meetings {
         rows.push(row(Feature::LiveChapters, None));
+        rows.push(row(Feature::StopAnyCallRecording, None));
+        // macOS's menu bar, capsule, and Meetings pane offer the switch.
+        if cfg!(target_os = "macos") {
+            rows.push(row(Feature::MeetingMicrophoneMute, None));
+        }
         // macOS's status item lists them, from the meeting controller's own
         // calendar read.
         if cfg!(target_os = "macos") {
@@ -629,8 +724,18 @@ fn rows(ui: &Ui) -> Vec<Row> {
         if Feature::MeetingImport.on_this_os() {
             rows.push(row(Feature::MeetingImport, None));
         }
+        // macOS and Windows place a capsule on a native display; a native
+        // Wayland capsule has no display to measure at all.
+        if Feature::MeetingIndicatorDisplay.on_this_os() {
+            rows.push(row(Feature::MeetingIndicatorDisplay, None));
+        }
+        rows.push(row(Feature::TranscriptEdits, None));
     }
     rows.push(row(Feature::VocabularyFiles, Some(&BOOK)));
+    // macOS's menu-bar menu offers it, right under Speech Model.
+    if caps.os == super::platform::Os::Macos {
+        rows.push(row(Feature::VocabularyMenu, None));
+    }
     // macOS reads the focused window through Accessibility as a capture
     // becomes real.
     if caps.os == super::platform::Os::Macos {
@@ -641,12 +746,17 @@ fn rows(ui: &Ui) -> Vec<Row> {
     if caps.keyboard_model_switching {
         rows.push(row(Feature::KeyboardModelSwitching, Some(&KEYBOARD)));
     }
+    // One key swaps the dictation model with the other saved one, and back.
+    rows.push(row(Feature::ModelSwitchShortcut, Some(&KEYBOARD)));
     // Every OS's paster can leave a dictation on the clipboard; only macOS's
     // and Windows' can skip the paste.
     rows.push(row(Feature::KeepOnClipboard, None));
     // Every OS's output stage signs a normal dictation at the one point its
     // paste, History, and Paste Last read.
     rows.push(row(Feature::Signature, None));
+    // Every OS's output stage reads its clipboard before its own paste
+    // replaces it.
+    rows.push(row(Feature::ClipboardPhrase, None));
     // Every OS's paster can press Return after its paste.
     rows.push(row(Feature::YoloMode, None));
     if matches!(
@@ -765,6 +875,7 @@ fn rows(ui: &Ui) -> Vec<Row> {
         });
     }
     rows.push(row(Feature::HistoryStats, None));
+    rows.push(row(Feature::HistoryStatsStrip, None));
     rows.push(row(Feature::KeepRecordings, None));
     rows.push(row(Feature::CopyDictationAudio, None));
     // The picker is a Mac gesture and History; elsewhere neither exists.
@@ -812,6 +923,11 @@ fn rows(ui: &Ui) -> Vec<Row> {
     rows.push(row(Feature::ApiTimestamps, None));
     rows.push(row(Feature::SpeakersOnly, None));
     rows.push(row(Feature::KeepMicrophoneOpen, Some(&TIMER)));
+    // macOS opens dictation's microphone through Apple's voice processing, so
+    // Control Center's Mic Mode can offer Voice Isolation.
+    if caps.os == super::platform::Os::Macos {
+        rows.push(row(Feature::VoiceIsolation, Some(&MIC)));
+    }
     let ultra_locked = Feature::ParakeetUltra.managed().is_none()
         && Feature::ParakeetUltra.off_refusal(&ui.settings).is_some();
     let ultra = row(Feature::ParakeetUltra, None);
@@ -843,50 +959,13 @@ fn rows(ui: &Ui) -> Vec<Row> {
     }
     #[cfg(hex_capture)]
     if ui.platform.scrawl.is_some() {
-        // A written capture's copy runs through the same engine and the same
-        // Annotate lock.
-        let annotate_locked = crate::policy::Policy::current().locks(crate::policy::Lock::Annotate);
-        let locked = annotate_locked || Feature::CopyCaptureZip.managed().is_some();
-        let copy_zip = row(Feature::CopyCaptureZip, Some(&FOLDER));
-        rows.push(Row {
-            locked,
-            about: if locked {
-                super::managed_note().into()
-            } else {
-                copy_zip.about.clone()
-            },
-            on: !locked && Feature::CopyCaptureZip.on(settings),
-            ..copy_zip
-        });
-        // `hex annotate inspect|zoom|frames|skill` for coding agents: the
-        // same engine and Annotate lock as the copy above.
-        let agent_locked = annotate_locked || Feature::AnnotateAgentTools.managed().is_some();
-        let agent_tools = row(Feature::AnnotateAgentTools, Some(&TERMINAL));
-        rows.push(Row {
-            locked: agent_locked,
-            about: if agent_locked {
-                super::managed_note().into()
-            } else {
-                agent_tools.about.clone()
-            },
-            on: !agent_locked && Feature::AnnotateAgentTools.on(settings),
-            ..agent_tools
-        });
-        // The Annotate pane's Agents section writes that skill into each
-        // coding agent's folder and links hex onto PATH (macOS).
-        let install_locked = annotate_locked || Feature::AnnotateAgentInstall.managed().is_some();
-        let agent_install = row(Feature::AnnotateAgentInstall, Some(&TERMINAL));
-        rows.push(Row {
-            locked: install_locked,
-            about: if install_locked {
-                super::managed_note().into()
-            } else {
-                agent_install.about.clone()
-            },
-            on: !install_locked && Feature::AnnotateAgentInstall.on(settings),
-            ..agent_install
-        });
-        let locked = annotate_locked;
+        // Every Annotate-group feature carries Lock::Annotate in its managed()
+        // check, so `row` locks them under DisableAnnotate automatically.
+        rows.push(row(Feature::CopyCaptureZip, Some(&FOLDER)));
+        rows.push(row(Feature::AnnotateAgentTools, Some(&TERMINAL)));
+        rows.push(row(Feature::AnnotateAgentInstall, Some(&TERMINAL)));
+        rows.push(row(Feature::DictateWhileAnnotating, Some(&KEYBOARD)));
+        let locked = crate::policy::Policy::current().locks(crate::policy::Lock::Annotate);
         rows.push(Row {
             lab: Lab::Annotate,
             icon: Pane::Annotate.icon(),
@@ -936,12 +1015,12 @@ fn live_text_note_for(
         return cpu_engine
             .then(|| tr("Live words need the GPU, and Speech engine is set to CPU").to_owned());
     }
-    let streaming: Vec<&'static str> = MODELS
+    let streaming: Vec<&str> = MODELS
         .iter()
         .filter(|model| model.streams && model.available() && model.supports_language(language))
-        .map(|model| model.name)
+        .map(|model| model.name.as_ref())
         .collect();
-    match *streaming.as_slice() {
+    match streaming.as_slice() {
         [first, second, ..] => Some(tr_named(
             "This speech model doesn't show live words; pick {first} or {second}",
             &[("first", first), ("second", second)],
@@ -973,6 +1052,7 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::LearnFromCorrections => "lab-learn-from-corrections",
         Feature::TerminalPaste => "lab-terminal-paste",
         Feature::KeyboardModelSwitching => "lab-keyboard-model-switching",
+        Feature::ModelSwitchShortcut => "lab-model-switch-shortcut",
         Feature::MouseShortcuts => "lab-mouse-shortcuts",
         Feature::PauseBrowser => "lab-pause-browser",
         Feature::ShareShortcut => "lab-share-shortcut",
@@ -997,6 +1077,7 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::ParakeetUltra => "lab-parakeet-ultra",
         Feature::StandaloneSpecialKeys => "lab-special-keys",
         Feature::HistoryStats => "lab-history-stats",
+        Feature::HistoryStatsStrip => "lab-history-stats-strip",
         Feature::RecentDictations => "lab-recent-dictations",
         Feature::SkipPauses => "lab-skip-pauses",
         Feature::OutputFixes => "lab-output-fixes",
@@ -1025,7 +1106,9 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::CopyCaptureZip => "lab-copy-capture-zip",
         Feature::AnnotateAgentTools => "lab-annotate-agent-tools",
         Feature::AnnotateAgentInstall => "lab-annotate-agent-install",
+        Feature::DictateWhileAnnotating => "lab-dictate-while-annotating",
         Feature::MeetingImport => "lab-meeting-import",
+        Feature::TranscriptEdits => "lab-transcript-edits",
         Feature::OpenCodeInWsl => "lab-opencode-in-wsl",
         Feature::YoloMode => "lab-yolo-mode",
         Feature::ApiProcessing => "lab-api-processing",
@@ -1037,11 +1120,17 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::StopPhrase => "lab-stop-phrase",
         Feature::Signature => "lab-signature",
         Feature::HudHeight => "lab-hud-height",
+        Feature::VoiceIsolation => "lab-voice-isolation",
         Feature::HoldThroughKeys => "lab-hold-through-keys",
         Feature::ModesEditor => "lab-modes-editor",
         Feature::DropTranscribe => "lab-drop-transcribe",
         Feature::VocabularyFiles => "lab-vocabulary-files",
+        Feature::VocabularyMenu => "lab-vocabulary-menu",
         Feature::DictationStyle => "lab-dictation-style",
+        Feature::StopAnyCallRecording => "lab-stop-any-call-recording",
+        Feature::ClipboardPhrase => "lab-clipboard-phrase",
+        Feature::MeetingMicrophoneMute => "lab-meeting-microphone-mute",
+        Feature::MeetingIndicatorDisplay => "lab-meeting-indicator-display",
     }
 }
 
@@ -1098,6 +1187,12 @@ fn flip(ui: &mut Ui, lab: Lab) {
         Feature::Signature => {
             let saved = ui.settings.labs.signature_text.clone();
             ui.lab_store.sync_signature(&saved);
+        }
+        // Its phrase field starts at the saved phrase, and an invalid draft
+        // leaves with its lab.
+        Feature::ClipboardPhrase => {
+            let saved = ui.settings.labs.clipboard_phrase_text.clone();
+            ui.lab_store.sync_clipboard_phrase(&saved);
         }
         // A notice already on screen leaves with its lab.
         Feature::FailureNotices if !on => crate::rune_ui::live_text::dismiss_failure(),
@@ -1176,6 +1271,7 @@ fn extras(ui: &Ui, p: Paint, entry: &Row, layer: &mut Vec<El>) -> Option<El> {
         Lab::Feature(Feature::VoicePrompt) => Some(voice_prompt::body(ui, p)),
         Lab::Feature(Feature::StopPhrase) => Some(stop_phrase::body(ui, p)),
         Lab::Feature(Feature::Signature) => Some(signature::body(ui, p)),
+        Lab::Feature(Feature::ClipboardPhrase) => Some(clipboard_phrase::body(ui, p)),
         #[cfg(target_os = "macos")]
         Lab::Feature(Feature::HudHeight) => Some(hud_height::body(ui, p)),
         Lab::Feature(Feature::DictationStyle) => Some(
@@ -1348,7 +1444,7 @@ mod tests {
         let streaming: Vec<&str> = crate::transcription::models::MODELS
             .iter()
             .filter(|model| model.streams && model.available() && model.supports_language("en"))
-            .map(|model| model.name)
+            .map(|model| model.name.as_ref())
             .collect();
         for name in streaming.iter().take(2) {
             assert!(note.contains(*name), "{note:?} names {name}");
