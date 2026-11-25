@@ -47,6 +47,7 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         const val SWIPE_SHARE = .35f
         const val FLICK_SHARE = .12f
         const val SWIPE_STEP = 64f
+        const val FLICK_GRACE = 96f
         const val FLICK_SPEED = .9f
         const val SWIPE_MS = 450L
         fun Int.isLight() = (Color.red(this) * 299 + Color.green(this) * 587 + Color.blue(this) * 114) / 1000 > 128
@@ -744,6 +745,8 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
                 val flick = kotlin.math.abs(dx) > width * FLICK_SHARE && kotlin.math.abs(dx) / density / elapsed > FLICK_SPEED &&
                     kotlin.math.abs(dx) > 2 * kotlin.math.abs(e.y - swipeY)
                 if (((flick && dx > 0) || dx > width * SWIPE_SHARE) && dx > 2 * kotlin.math.abs(e.y - swipeY)) {
+                    // A flick carries on past where it was read: its second word waits for the finger to go further.
+                    swipeGrace = if (dx > width * SWIPE_SHARE) 0f else FLICK_GRACE * density
                     swipeOrigin = maxOf(swipeX, e.x + width * SWIPE_SHARE); swipeX = Float.NaN; swiped = true
                     clearCallout(); endSlide()
                     swipeSlide = ime.engine.deleteSlide()
@@ -755,11 +758,12 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         }
         return false
     }
+    private var swipeGrace = 0f
     private fun swipeTo(x: Float) {
         val slide = swipeSlide ?: return
         val dx = swipeOrigin - x
         val start = width * SWIPE_SHARE
-        val words = if (dx < start / 2) 0 else maxOf(1, 1 + ((dx - start) / (SWIPE_STEP * density)).toInt())
+        val words = if (dx < start / 2) 0 else 1 + (maxOf(0f, dx - start - swipeGrace) / (SWIPE_STEP * density)).toInt()
         if (words == swipeWords) return
         slide.select(words)
         if (slide.words != swipeWords && vibrates(ime.feedback.haptics)) performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
