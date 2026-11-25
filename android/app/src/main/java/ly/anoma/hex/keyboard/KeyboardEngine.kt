@@ -326,6 +326,40 @@ internal class KeyboardEngine(
         settleUndo()
         cancelChip(); word?.reset(); undo = null; expectedCaret = -1; prefix = ""
     }
+    /** Keyboard › Backspace steps through suggestions: the word a space just finished ([words] at [at], then the
+     * strip's other suggestions for it), while the text before the cursor is still [anchor]. */
+    private class Steps(var anchor: String, val words: List<String>, var at: Int)
+    private var steps: Steps? = null
+    /** The strip's words for the word in progress, for [steps]; empty while the setting is off. */
+    private fun stepWords(w: TypingWord): List<String> =
+        if (!feedback.stepCorrections || w.token.isEmpty()) emptyList()
+        else w.strip(autocorrect = feedback.autocorrect && correctingField).map { it.text }
+    private fun startSteps(current: String, options: List<String>) {
+        val words = (listOf(current) + options).distinctBy { it.lowercase() }
+        steps = if (words.size > 1 && ' ' !in current) Steps(before(), words, 0) else null
+        if (steps != null) showSteps()
+    }
+    private fun showSteps() {
+        val s = steps ?: return
+        val rest = (s.words.drop(s.at + 1) + s.words.take(s.at)).take(2)
+        surface?.suggestions(listOf(Suggestion(s.words[s.at], Suggestion.Kind.Fix)) + rest.map { Suggestion(it, Suggestion.Kind.Word) })
+    }
+    /** Puts [index] of [steps] in place of the word there now; false when the text moved on. */
+    private fun stepTo(index: Int): Boolean {
+        val s = steps ?: return false
+        if (before() != s.anchor || !replace(s.words[s.at] + " ", smartWord(s.words[index]) + " ")) { steps = null; return false }
+        val last = undo
+        // Leaving an autocorrection's fix is undoing it, and is remembered as an undo is.
+        if (s.at == 0 && last != null) {
+            if (learnsTyping) feedback.undo(last.language, last.original, last.replacement)
+            learning?.corrections?.undone(last.original, last.replacement)
+        }
+        undo = null
+        s.at = index; s.anchor = before()
+        if (expectedCaret >= 0) expectedCaret = -1
+        showSteps()
+        return true
+    }
     private fun clearSpaces() { spaceAnchor = null; pickedAnchor = null; heldAnchor = null; swipeAnchor = null }
     private fun forgetSwipe() { swiped = null; takenBack = null }
     private fun cancelChip() { pendingChip?.let(main::removeCallbacks); pendingChip = null }
@@ -500,6 +534,11 @@ internal class KeyboardEngine(
         }
         val w = word ?: return
         if (pickSwiped(text)) return
+        steps?.let { s ->
+            val index = s.words.indexOf(text)
+            if (index >= 0 && before() == s.anchor) { edited(); stepTo(index); return }
+            steps = null
+        }
         edited()
         if ((symbols && w.token.isEmpty()) || !canEndWord()) return
         val old = w.token
@@ -556,19 +595,24 @@ internal class KeyboardEngine(
             val swap = w.textReplacement(b)
             if (swap != null && replace(swap.original, smartWord(swap.replacement) + " ")) { resetTyping(); afterSpace(now); return }
             if (feedback.autocorrect && correctingField && old.isNotEmpty() && endsWith(prefix + old)) {
+                val options = stepWords(w)
                 val fix = w.finish(' ', point, grid, ::smartWord)
                 if (fix != null && !blocked(lang, fix.original, fix.replacement) &&
                     replace(fix.original, fix.replacement + " ")) {
                     cancelChip()
                     undo = Undo(lang, fix.original, fix.replacement)
                     if (expectedCaret >= 0) expectedCaret += fix.replacement.length + 1 - fix.original.length
-                    w.reset(); afterSpace(now); return
+                    w.reset(); afterSpace(now)
+                    if (' ' !in fix.original) startSteps(fix.replacement, options)
+                    return
                 }
             }
         }
         val typed = word?.token?.takeIf { it.isNotEmpty() && endsWith(prefix + it) }
+        val options = if (typed != null && !afterSwipe) stepWords(word!!) else emptyList()
         target.commit(" "); resetTyping(); afterSpace(now)
         typed?.let(::noteTyped)
+        if (typed != null) startSteps(typed, options)
     }
     private fun noteTyped(spelling: String) {
         val w = word ?: return
@@ -636,6 +680,10 @@ internal class KeyboardEngine(
         }
         if (deleteSwiped()) return
         edited()
+        val s = steps
+        if (s != null && feedback.stepCorrections && s.at + 1 < s.words.size && before() == s.anchor &&
+            target.selected().isNullOrEmpty() && stepTo(s.at + 1)) return
+        steps = null
         // Right after a pick held its space, delete takes that space back and deletes nothing.
         if (heldAnchor != null && heldAnchor == before()) { clearSpaces(); surface?.suggestions(emptyList()); return }
         clearSpaces()

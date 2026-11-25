@@ -145,6 +145,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     val hideComma = remember(revision) { typing.hideComma }
     val hideEmoji = remember(revision) { typing.hideEmoji }
     val swipeDelete = remember(revision) { typing.swipeDelete }
+    val stepCorrections = remember(revision) { typing.stepCorrections }
     val learned = remember(revision) { typing.learnedWords.size }
     val learn = remember(revision) { typing.learn }
     var confirmClear by remember { mutableStateOf(false) }
@@ -335,6 +336,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                             Rule(); Toggle(stringResource(R.string.settings_comma_key), stringResource(R.string.settings_comma_key_detail), !hideComma) { typing.hideComma = !it }
                             Rule(); Toggle(stringResource(R.string.settings_emoji_key), stringResource(R.string.settings_emoji_key_detail), !hideEmoji) { typing.hideEmoji = !it }
                             Rule(); Toggle(stringResource(R.string.settings_swipe_delete), stringResource(R.string.settings_swipe_delete_detail), swipeDelete) { typing.swipeDelete = it }
+                            Rule(); Toggle(stringResource(R.string.settings_step_corrections), stringResource(R.string.settings_step_corrections_detail), stepCorrections) { typing.stepCorrections = it }
                             Rule(); Stepper(stringResource(R.string.settings_hold_delay), stringResource(R.string.settings_hold_delay_detail),
                                 "$holdMs ms", { typing.holdMs = holdMs - 25 }, { typing.holdMs = holdMs + 25 })
                             Rule(); Stepper(stringResource(R.string.settings_period_hold), stringResource(R.string.settings_period_hold_detail),

@@ -47,6 +47,10 @@ internal class TypingPreferences(context: Context) {
     var hideEmoji: Boolean
         get() = prefs.getBoolean(HIDE_EMOJI, false)
         set(value) { prefs.edit().putBoolean(HIDE_EMOJI, value).apply() }
+    /** Keyboard › Backspace steps through suggestions: right after a word, delete swaps it for the strip's next one. */
+    var stepCorrections: Boolean
+        get() = prefs.getBoolean("stepCorrections", false)
+        set(value) { prefs.edit().putBoolean("stepCorrections", value).apply() }
     var swipeDelete: Boolean
         get() = prefs.getBoolean("swipeDelete", true)
         set(value) { prefs.edit().putBoolean("swipeDelete", value).apply() }
