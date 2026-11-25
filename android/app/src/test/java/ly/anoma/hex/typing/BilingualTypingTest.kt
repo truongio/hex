@@ -115,4 +115,22 @@ class BilingualTypingTest {
             assertNull(w.replacement())
         }
     }
+
+    @Test fun deleteBackIntoAWordOffersWhatItsTypingDid() {
+        val w = mixed(); val before = "what's the postal code for "
+        w.reset(before)
+        for (c in "thus") { val p = grid.centres.getValue(c); w.letter(c.toString(), p.x, p.y, grid) }
+        val typing = w.strip()
+        w.reset(); w.reset(before + "thus ")
+        w.resume("thus", before)
+        assertEquals(typing, w.strip())
+        w.resume("jsg", "")
+        assertEquals(listOf("jsg"), w.strip().take(1).map { it.text })
+        val fixed = mixed(); fixed.reset("")
+        for (c in "jsg") { val p = grid.centres.getValue(c); fixed.letter(c.toString(), p.x, p.y, grid) }
+        assertEquals("jag", fixed.replacement())
+        fixed.reset(); fixed.resume("jsg", "", keep = true)
+        assertNull(fixed.replacement())
+        assertTrue(fixed.strip().toString(), fixed.strip().any { it.text == "jag" })
+    }
 }

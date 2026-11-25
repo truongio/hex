@@ -86,7 +86,11 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
     /** Starts a word after `before`. The word a space just finished stays revisable only when
      * `before` is still the text it left; an empty `before` keeps it for the next call. */
     fun reset(before: String = "") {
-        token = ""; taps.clear(); otherTaps.clear(); points.clear(); decision = null; literalOnly = false
+        if (token.isNotEmpty()) {
+            typedWords.addLast(Typed(token, this.before, ArrayList(taps), ArrayList(otherTaps), ArrayList(points), pointGrid, literalOnly))
+            if (typedWords.size > KEPT_WORDS) typedWords.removeFirst()
+        }
+        token = ""; taps.clear(); otherTaps.clear(); points.clear(); decision = null; literalOnly = false; kept = null
         this.before = before
         previousText = previousWord(before).takeIf { it.isNotEmpty() }
         previous = model.context(previousText.orEmpty())
@@ -101,6 +105,26 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         pending = null
     }
     fun restored(text: String, before: String) { reset(before); explicit(text) } // No taps: space keeps the undone spelling.
+
+    /** A word as typed and the taps that typed it, kept after it ends so delete can go back into it. */
+    private class Typed(val token: String, val before: String, val taps: List<SpatialDecoder.Tap>,
+                        val otherTaps: List<SpatialDecoder.Tap>, val points: List<KeyPoint>, val grid: KeyGrid?, val literal: Boolean)
+    private val typedWords = ArrayDeque<Typed>()
+    // The spelling an undone autocorrection put back: space keeps it while it is unchanged.
+    private var kept: String? = null
+
+    /** Back into [text], the word right before the cursor after `before`, as SwiftKey does when delete takes
+     * the space after it: when it is a word typed here, with the same text before it, its taps come back
+     * and the strip offers what it did while it was typed; otherwise the strip completes it as spelled.
+     * [keep]: an undone autocorrection, whose spelling space then leaves alone. */
+    fun resume(text: String, before: String, keep: Boolean = false) {
+        val typed = typedWords.lastOrNull { it.token == text && sameTail(it.before, before) }
+        if (typed == null) { restored(text, before); kept = if (keep) text else null; return }
+        reset(before)
+        token = typed.token; literalOnly = typed.literal
+        taps.addAll(typed.taps); otherTaps.addAll(typed.otherTaps); points.addAll(typed.points); pointGrid = typed.grid
+        kept = if (keep) text else null
+    }
     /** Up to three words for the strip between words (iOS #2125): at a sentence's start three common
      * first words, after a comma or other mid-sentence mark words that start a clause, after a word
      * the likeliest next words from the word pairs with the language's commonest words filling the
@@ -376,7 +400,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
     private fun withCapitals(): String? {
         // A stand-in changes nothing on space or a mark: English's fixes and your own spellings alike wait
         // for a layout or a language with a model. Your shortcuts go in through textReplacement before it.
-        if (standIn || token.isEmpty()) return null
+        if (standIn || token.isEmpty() || token == kept) return null
         val personal = decoder.personal
         personal?.shortcut(lookup(token))?.let { return it }
         // Your own word: never corrected into another, and spelled your way ("github" -> "GitHub").
@@ -594,6 +618,12 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
             rest = rest.trimEnd { it in "\"')]\u201D\u2019" }
             return rest.lastOrNull()?.let { it in ".!?" } ?: false
         }
+        // The text before two words matches when the shorter's last 32 characters end the longer.
+        private fun sameTail(a: String, b: String): Boolean {
+            val n = minOf(a.length, b.length, 32)
+            return a.takeLast(n) == b.takeLast(n)
+        }
+        private const val KEPT_WORDS = 8
         // Hosts give a window of the text: compare its last 64 characters once both are that long.
         private fun sameText(a: String, b: String) =
             if (a.length >= 64 && b.length >= 64) a.takeLast(64) == b.takeLast(64) else a == b

@@ -651,12 +651,23 @@ internal class KeyboardEngine(
         if (selected) { val inline = urlField && track && selStart == expectedCaret; target.commit(""); if (!inline) resetTyping() }
         else {
             // A whole character as people see it: 👍🏽, a flag or a family is one, as on Gboard.
-            val cluster = if (track || secure) 1 else DeleteSlide.lastCharacter(target.before(32).orEmpty())
+            val window = target.before(32).orEmpty()
+            val cluster = if (track || secure) 1 else DeleteSlide.lastCharacter(window)
+            // The space right after a word: delete goes back into that word (SwiftKey).
+            val intoWord = !track && !secure && w != null && wordField && window.endsWith(" ") &&
+                window.dropLast(1).lastOrNull()?.let { it.isLetter() || it == '\'' } == true
+            val caret = if (selStart >= 0 && selStart == selEnd) selStart - 1 else -1
             // Drop the letter before the editor does: an editor in Hex's own process reports the new
             // selection during the delete call, and that report must find the word already shorter.
             if (track) { w!!.pop(); if (expectedCaret >= 0) expectedCaret-- }
             if (!(if (cluster > 1) target.deleteBefore(cluster) else target.deleteCodePointsBefore(1))) target.sendKey(KeyEvent.KEYCODE_DEL)
             if (!track) resetTyping()
+            if (intoWord) {
+                val b = before()
+                TypingWord.currentToken(b)?.let { typed ->
+                    prefix = b.dropLast(typed.length).takeLast(40); w!!.resume(typed, prefix); expectedCaret = caret
+                }
+            }
         }
         if (w != null && w.token.isNotEmpty()) showSuggestions(w) else surface?.suggestions(emptyList())
         showEmails()
@@ -811,7 +822,7 @@ internal class KeyboardEngine(
         learning?.corrections?.undone(last.original, last.replacement)
         val typed = last.original.substringAfterLast(' ')
         if (learnsTyping && word?.worthLearning(typed) == true && typed.all { it.isLetter() || it == '\'' }) feedback.noteWord(typed)
-        prefix = before().dropLast(typed.length).takeLast(40); word?.restored(typed, prefix)
+        prefix = before().dropLast(typed.length).takeLast(40); word?.resume(typed, prefix, keep = true)
         if (expectedCaret >= 0) expectedCaret += last.original.length - last.replacement.length - 1
         return true
     }
