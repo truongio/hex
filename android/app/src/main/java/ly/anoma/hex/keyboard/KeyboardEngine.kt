@@ -592,7 +592,8 @@ internal class KeyboardEngine(
         val afterSwipe = swipeAnchor != null && swipeAnchor == b
         clearSpaces()
         val w = word
-        if (w != null && !symbols && !exactField && canEndWord() && !afterSwipe) {
+        // An address bar corrects on space too (this fork): a URL is typed without one, so only words are fixed.
+        if (w != null && !symbols && canEndWord() && !afterSwipe) {
             val old = w.token; val lang = w.decoder.model.language
             // Your text replacements first, whatever autocorrect is set to; they never offer an undo.
             val swap = w.textReplacement(b)
