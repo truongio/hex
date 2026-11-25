@@ -326,9 +326,11 @@ internal class KeyboardEngine(
         settleUndo()
         cancelChip(); word?.reset(); undo = null; expectedCaret = -1; prefix = ""
     }
-    /** Keyboard › Backspace steps through suggestions: the word a space just finished ([words] at [at], then the
-     * strip's other suggestions for it), while the text before the cursor is still [anchor]. */
-    private class Steps(var anchor: String, val words: List<String>, var at: Int)
+    /** The word a space or a pick just finished ([words] at [at]: what went in, then the other words delete can put
+     * there), while the text before the cursor is still [anchor]. The first delete takes the space and stays on the
+     * word ([entered]); each next one puts the next word in its place. An autocorrection always gets its typed
+     * spelling next; Keyboard › Backspace steps through suggestions adds the strip's other words. */
+    private class Steps(var anchor: String, val words: List<String>, var at: Int, var entered: Boolean = false)
     private var steps: Steps? = null
     /** The strip's words for the word in progress, for [steps]; empty while the setting is off. */
     private fun stepWords(w: TypingWord): List<String> =
@@ -337,17 +339,29 @@ internal class KeyboardEngine(
     private fun startSteps(current: String, options: List<String>) {
         val words = (listOf(current) + options).distinctBy { it.lowercase() }
         steps = if (words.size > 1 && ' ' !in current) Steps(before(), words, 0) else null
-        if (steps != null) showSteps()
+        if (steps != null && feedback.stepCorrections) showSteps()
     }
     private fun showSteps() {
         val s = steps ?: return
         val rest = (s.words.drop(s.at + 1) + s.words.take(s.at)).take(2)
         surface?.suggestions(listOf(Suggestion(s.words[s.at], Suggestion.Kind.Fix)) + rest.map { Suggestion(it, Suggestion.Kind.Word) })
     }
+    /** The first delete after the word: takes its space and goes back into it, which keeps its spelling on space. */
+    private fun enterSteps(s: Steps): Boolean {
+        if (!target.deleteCodePointsBefore(1)) return false
+        s.entered = true; s.anchor = before()
+        val current = s.words[s.at]
+        prefix = s.anchor.dropLast(current.length).takeLast(40); word?.resume(current, prefix, keep = true)
+        expectedCaret = -1
+        showSteps()
+        return true
+    }
     /** Puts [index] of [steps] in place of the word there now; false when the text moved on. */
     private fun stepTo(index: Int): Boolean {
         val s = steps ?: return false
-        if (before() != s.anchor || !replace(s.words[s.at] + " ", smartWord(s.words[index]) + " ")) { steps = null; return false }
+        val tail = if (s.entered) "" else " "
+        val next = smartWord(s.words[index])
+        if (before() != s.anchor || !replace(s.words[s.at] + tail, next + tail)) { steps = null; return false }
         val last = undo
         // Leaving an autocorrection's fix is undoing it, and is remembered as an undo is.
         if (s.at == 0 && last != null) {
@@ -356,7 +370,8 @@ internal class KeyboardEngine(
         }
         undo = null
         s.at = index; s.anchor = before()
-        if (expectedCaret >= 0) expectedCaret = -1
+        expectedCaret = -1
+        if (s.entered) { prefix = s.anchor.dropLast(next.length).takeLast(40); word?.resume(next, prefix, keep = true) }
         showSteps()
         return true
     }
@@ -536,7 +551,7 @@ internal class KeyboardEngine(
         if (pickSwiped(text)) return
         steps?.let { s ->
             val index = s.words.indexOf(text)
-            if (index >= 0 && before() == s.anchor) { edited(); stepTo(index); return }
+            if (index >= 0 && index != s.at && before() == s.anchor) { edited(); stepTo(index); return }
             steps = null
         }
         edited()
@@ -547,7 +562,7 @@ internal class KeyboardEngine(
         if (old.isEmpty() && !w.startsWord(before())) return
         val holds = SpaceRules.separates(target.after(1))
         // A picked word steps back through what was typed and the strip's other words, as a space's word does.
-        val options = if (old.isNotEmpty() && !holds) listOf(old) + stepWords(w) else emptyList()
+        val options = if (old.isNotEmpty() && !holds && feedback.stepCorrections) listOf(old) + stepWords(w) else emptyList()
         clearSpaces()
         val committed = smartWord(text)
         if (replace(old, if (holds) committed else "$committed ")) {
@@ -599,7 +614,7 @@ internal class KeyboardEngine(
             val swap = w.textReplacement(b)
             if (swap != null && replace(swap.original, smartWord(swap.replacement) + " ")) { resetTyping(); afterSpace(now); return }
             if (feedback.autocorrect && correctingField && old.isNotEmpty() && endsWith(prefix + old)) {
-                val options = stepWords(w)
+                val options = listOf(old) + stepWords(w)
                 val fix = w.finish(' ', point, grid, ::smartWord)
                 if (fix != null && !blocked(lang, fix.original, fix.replacement) &&
                     replace(fix.original, fix.replacement + " ")) {
@@ -685,8 +700,11 @@ internal class KeyboardEngine(
         if (deleteSwiped()) return
         edited()
         val s = steps
-        if (s != null && feedback.stepCorrections && s.at + 1 < s.words.size && before() == s.anchor &&
-            target.selected().isNullOrEmpty() && stepTo(s.at + 1)) return
+        if (s != null && before() == s.anchor && target.selected().isNullOrEmpty()) {
+            if (!s.entered && enterSteps(s)) return
+            // Without the setting only an autocorrection's typed spelling comes back; then delete is delete again.
+            if (s.entered && s.at + 1 < s.words.size && stepTo(s.at + 1)) return
+        }
         steps = null
         // Right after a pick held its space, delete takes that space back and deletes nothing.
         if (heldAnchor != null && heldAnchor == before()) { clearSpaces(); surface?.suggestions(emptyList()); return }
