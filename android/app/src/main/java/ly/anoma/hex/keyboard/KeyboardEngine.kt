@@ -546,6 +546,8 @@ internal class KeyboardEngine(
         if (old.isNotEmpty() && text == old) noteTyped(old)
         if (old.isEmpty() && !w.startsWord(before())) return
         val holds = SpaceRules.separates(target.after(1))
+        // A picked word steps back through what was typed and the strip's other words, as a space's word does.
+        val options = if (old.isNotEmpty() && !holds) listOf(old) + stepWords(w) else emptyList()
         clearSpaces()
         val committed = smartWord(text)
         if (replace(old, if (holds) committed else "$committed ")) {
@@ -553,6 +555,7 @@ internal class KeyboardEngine(
             val b = before()
             if (holds) heldAnchor = b else pickedAnchor = b
             showPredictions(b)
+            if (options.isNotEmpty()) startSteps(text, options)
             inputDone()
         }
     }
@@ -579,7 +582,7 @@ internal class KeyboardEngine(
         when {
             // The text after the cursor already separates the picked word: space has nothing to add.
             heldAnchor != null && heldAnchor == b -> { clearSpaces(); showPredictions(b); return }
-            pickedAnchor != null && pickedAnchor == b -> { clearSpaces(); spaceAnchor = b; spaceAt = now; showPredictions(b); return }
+            pickedAnchor != null && pickedAnchor == b -> { clearSpaces(); steps = null; spaceAnchor = b; spaceAt = now; showPredictions(b); return }
             word != null && !exactField && spaceAnchor == b && now - spaceAt <= SpaceRules.DOUBLE_SPACE_MS && SpaceRules.periodFits(b) -> {
                 clearSpaces()
                 if (replace(" ", ". ")) { resetTyping(); showPredictions(before()); inputDone(); return }
