@@ -51,9 +51,10 @@ internal class TypingPreferences(context: Context) {
     var stepCorrections: Boolean
         get() = prefs.getBoolean("stepCorrections", false)
         set(value) { prefs.edit().putBoolean("stepCorrections", value).apply() }
+    // Swipe typing and swipe-left-to-delete share the gesture across the letters: turning one on turns the other off.
     var swipeDelete: Boolean
-        get() = prefs.getBoolean("swipeDelete", true)
-        set(value) { prefs.edit().putBoolean("swipeDelete", value).apply() }
+        get() = prefs.getBoolean("swipeDelete", true) && !swipe
+        set(value) { prefs.edit().putBoolean("swipeDelete", value).apply { if (value) putBoolean("swipe", false) }.apply() }
     var learnedEmails: List<String>
         get() = prefs.getString("learnedEmails", null)?.split('\n')?.filter(String::isNotEmpty).orEmpty()
         set(value) { prefs.edit().putString("learnedEmails", value.joinToString("\n")).apply() }
@@ -78,7 +79,7 @@ internal class TypingPreferences(context: Context) {
     /** Keyboard › Swipe typing: slide through a word's letters to type it. On by default, as on iPhone and Gboard. */
     var swipe: Boolean
         get() = prefs.getBoolean("swipe", true)
-        set(value) { prefs.edit().putBoolean("swipe", value).apply() }
+        set(value) { prefs.edit().putBoolean("swipe", value).apply { if (value) putBoolean("swipeDelete", false) }.apply() }
     var popups: Boolean
         get() = prefs.getBoolean("popups", true)
         set(value) { prefs.edit().putBoolean("popups", value).apply() }
