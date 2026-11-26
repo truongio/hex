@@ -16,22 +16,16 @@ internal object KeyboardLetters {
     /** Row 1's digits, 1 to 0 on its first ten keys, as Gboard draws and holds them. */
     fun digit(row: Int, index: Int): Char? = if (row == 0 && index < 10) DIGITS[index] else null
 
-    /** Gboard's ?123 page (Pixel 8 emulator, API 36), top to bottom: its ten digits, ten marks, and the
-     * seven keys between the page switch and delete. [currency] is Labs › Keyboard › Local currency's
-     * symbol, in $'s place, or null for $. */
-    fun numbers(currency: Char? = null) =
-        listOf(DIGITS, "@#${currency ?: '$'}_&-+()/", "*\"':;!?")
-
-    /** Gboard's =< page: the marks the ?123 page has no room for, on the same seven-key last row. A
-     * local currency that page took $'s place with gives up its own slot here for $; one Hex has no slot
-     * for takes only ¥'s, so £, ¢ and € stay drawn and nothing is duplicated. $ is always on one of the
-     * two pages. */
+    /** The 123 page and the second symbols page. [currency] is Labs › Keyboard › Local currency's symbol,
+     * in $'s place on the 123 page, which gives $ its slot on the second page, or ¥'s. */
+    fun numbers(currency: Char? = null) = listOf(DIGITS, "-/:;()${currency ?: '$'}&@\"", PUNCTUATION)
     fun symbols(currency: Char? = null): List<String> {
         val money = when {
-            currency == null -> "£¢€¥"
-            currency in "£¢€¥" -> "£¢€¥".replace(currency, '$')
-            else -> "£¢€$"
+            currency == null -> "€£¥"
+            currency in "€£¥" -> "€£¥".replace(currency, '$')
+            else -> "€£$"
         }
-        return listOf("~`|•√π÷×§Δ", "${money}^°={}\\", "%©®™✓[]")
+        return listOf("[]{}#%^*+=", "_\\|~<>$money•", PUNCTUATION)
     }
+    private const val PUNCTUATION = ".,?!'"
 }

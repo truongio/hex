@@ -158,7 +158,7 @@ internal class LetterFeedback(private val host: ViewGroup) {
         // which neither page has a key of its own for.
         private val symbols = mapOf('1' to "1½⅓¼⅕⅙⅐⅛⅑⅒", '2' to "2⅔⅖", '3' to "3⅗¾⅜", '4' to "4⅘", '5' to "5⅝⅚",
             '7' to "7⅞", '0' to "0∅ⁿ", '#' to "№", '$' to "¢€£₹¥₱", '-' to "_—–·", '+' to "±", '(' to "<[{",
-            ')' to ">]}", '*' to "†★‡", '"' to "”„“«»", '\'' to "’‚‘‹›", '!' to "¡", '?' to "¿‽", '.' to "…",
+            ')' to ">]}", '*' to "†★‡", '"' to "”„“«»", '\'' to "’‚‘‹›`", '!' to "¡", '?' to "¿‽", '.' to "…",
             '%' to "‰℅", '^' to "↑←↓→", '=' to "≠∞≈", '<' to "≤«‹⟨", '>' to "≥⟩»›", '•' to "♪♣♠♥♦")
         /** A symbol key's held options. With a Labs local currency in [currency]'s place, that key offers the
          * $ it replaced first and the list has no duplicate of itself. */
@@ -167,10 +167,7 @@ internal class LetterFeedback(private val host: ViewGroup) {
             return held.filter { it != currency }.map { it.toString() }
         }
 
-        /** The period key's held punctuation on the letters page, as Gboard's three rows (nearest the key
-         * first), with the comma under the finger. */
-        val periodHolds = listOf(listOf("(", ")", "#", "!", ",", "?"), listOf("-", ":", "@", "'", "/", ";"),
-            listOf("·", "_", "&", "%", "\"", "+"))
-        const val PERIOD_DEFAULT = 4
+        val periodHolds = listOf(listOf("?", ",", "!"))
+        const val PERIOD_DEFAULT = 1
     }
 }
