@@ -216,6 +216,8 @@ class InsertionTest {
         assertEquals(listOf(4, 9, 14), DeleteSlide.wordLengths("far away from home").take(3))
         assertEquals(listOf(7, 14), DeleteSlide.wordLengths("Hello, world. ").toList())
         assertEquals(listOf(6), DeleteSlide.wordLengths("don't ").toList())
+        assertEquals(listOf(25, 30), DeleteSlide.wordLengths("open https://example.com/a?b=c").toList())
+        assertEquals(listOf(16), DeleteSlide.wordLengths("me@example.com, ").toList())
         val delete = DeleteGesture(start = 140f, step = 95f, cancel = 84f, stillSlop = 21f)
         delete.down(1000f)
         assertEquals(0, delete.move(940f)); assertEquals(true, delete.tap)

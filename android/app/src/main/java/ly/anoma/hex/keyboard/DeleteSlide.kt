@@ -21,8 +21,9 @@ internal class DeleteGesture(private val start: Float, private val step: Float, 
     val tap get() = farthest < cancel
 }
 
-/** Selects whole words back from the cursor while a delete slide runs. Words are what Option-Delete
- * takes on a Mac: the spaces and punctuation before the cursor go with the word in front of them. */
+/** Selects whole words back from the cursor while a delete slide runs. A word runs back to the
+ * previous whitespace, so a URL or an email address goes in one step, and the spaces before the
+ * cursor go with the word in front of them. */
 internal class DeleteSlide(private val target: KeyboardTextTarget, private val cursor: Int, before: String) {
     private val lengths = wordLengths(before)
     var words = 0
@@ -54,11 +55,6 @@ internal class DeleteSlide(private val target: KeyboardTextTarget, private val c
             return out.toIntArray()
         }
         private fun previous(text: String, i: Int) = if (i >= 2 && Character.isLowSurrogate(text[i - 1]) && Character.isHighSurrogate(text[i - 2])) i - 2 else i - 1
-        /** Letters, digits, emoji and the apostrophe inside "don't" belong to a word. */
-        private fun isWordCharacter(text: String, end: Int): Boolean {
-            val c = text.codePointBefore(end)
-            return Character.isLetterOrDigit(c) || c == '_'.code || c == '\''.code || c == '’'.code ||
-                Character.getType(c) == Character.OTHER_SYMBOL.toInt() || Character.getType(c) == Character.NON_SPACING_MARK.toInt()
-        }
+        private fun isWordCharacter(text: String, end: Int): Boolean = !Character.isWhitespace(text.codePointBefore(end))
     }
 }
