@@ -127,6 +127,7 @@ class HexKeyboard : InputMethodService() {
         if (key == TypingPreferences.LOCAL_CURRENCY) engine.localCurrencyChanged()
         if (key == TypingPreferences.EMOJI_SUGGESTIONS) engine.emojiSuggestionsChanged()
         if (key == TypingPreferences.KEYBOARD_TOOLS) { engine.keyboardToolsChanged(); watchClipboard() }
+        if (key == TypingPreferences.PINNED_PASTE) { engine.clipboardChanged(); watchClipboard() }
         if (key == TypingPreferences.VOICE_ONLY) modeChanged()
         if (key == TypingPreferences.PASSWORD_MANAGER_SUGGESTIONS) clearInline()
     }
@@ -137,7 +138,7 @@ class HexKeyboard : InputMethodService() {
     private var viewing = false
     private var watchingClipboard = false
     private fun watchClipboard() {
-        val watch = viewing && feedback.keyboardTools && bar == null
+        val watch = viewing && (feedback.keyboardTools || feedback.pinnedPaste) && bar == null
         if (watch == watchingClipboard) return
         watchingClipboard = watch
         if (watch) clipboard.addPrimaryClipChangedListener(clipboardChanged)

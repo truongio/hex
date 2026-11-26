@@ -190,6 +190,8 @@
     <string name="local_currency_detail">Uses your region’s currency on the ?123 page and d’s held symbol instead of $</string>
     <string name="keyboard_tools">Keyboard tools</string>
     <string name="keyboard_tools_detail">Emoji, paste, settings and undo in the suggestion strip</string>
+    <string name="pinned_paste">Pinned paste</string>
+    <string name="pinned_paste_detail">Keep a Paste button at the end of the suggestion strip whenever you have something copied</string>
     <string name="smart_quotes">Smart quotes</string>
     <string name="smart_quotes_detail">Types ’ ‘ “ ” for \' and \"</string>
     <string name="swipe_delete_letters">Delete swiped words letter by letter</string>

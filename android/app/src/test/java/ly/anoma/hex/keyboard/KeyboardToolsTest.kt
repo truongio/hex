@@ -78,4 +78,15 @@ class KeyboardToolsTest {
         KeyboardTools.showsInEmptyField(enabled = true, before = "") { asked++; "" }
         assertEquals(1, asked)
     }
+
+    @Test fun pinnedPasteShowsBesideSuggestionsWithAClip() {
+        assertTrue(KeyboardTools.pinnedPaste(enabled = true, busy = false, secure = { false }, clipboard = { true }))
+    }
+
+    @Test fun pinnedPasteHidesWhenOffBusySecureOrEmpty() {
+        assertFalse(KeyboardTools.pinnedPaste(enabled = false, busy = false, secure = { false }, clipboard = { true }))
+        assertFalse(KeyboardTools.pinnedPaste(enabled = true, busy = true, secure = { false }, clipboard = { true }))
+        assertFalse(KeyboardTools.pinnedPaste(enabled = true, busy = false, secure = { true }, clipboard = { true }))
+        assertFalse(KeyboardTools.pinnedPaste(enabled = true, busy = false, secure = { false }, clipboard = { false }))
+    }
 }

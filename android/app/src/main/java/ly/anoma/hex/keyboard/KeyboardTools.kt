@@ -20,6 +20,9 @@ internal object KeyboardTools {
         }
     }
 
+    fun pinnedPaste(enabled: Boolean, busy: Boolean, secure: () -> Boolean, clipboard: () -> Boolean): Boolean =
+        enabled && !busy && !secure() && clipboard()
+
     /** Whether an empty field's line goes to the tools instead of the sentence starters it would
      * otherwise offer: the lab is on and the field has no text before the cursor or after it. The
      * text after the cursor is read only once the lab is on and nothing comes before. */

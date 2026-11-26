@@ -129,6 +129,7 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
     var signatureDraft by remember { mutableStateOf(speech.signatureText) }
     val emojiSuggestions = remember(revision) { typing.emojiSuggestions }
     val keyboardTools = remember(revision) { typing.keyboardTools }
+    val pinnedPaste = remember(revision) { typing.pinnedPaste }
     val smartQuotes = remember(revision) { typing.smartQuotes }
     val swipeDeleteLetters = remember(revision) { typing.swipeDeleteLetters }
     val passwordManager = remember(revision) { typing.passwordManagerSuggestions }
@@ -495,6 +496,9 @@ internal fun HexSettings(setup: Setup, speech: SpeechPreferences, typing: Typing
                                 Rule()
                                 Toggle(stringResource(R.string.keyboard_tools), stringResource(R.string.keyboard_tools_detail),
                                     keyboardTools) { typing.keyboardTools = it }
+                                Rule()
+                                Toggle(stringResource(R.string.pinned_paste), stringResource(R.string.pinned_paste_detail),
+                                    pinnedPaste) { typing.pinnedPaste = it }
                                 Rule()
                                 Toggle(stringResource(R.string.smart_quotes), stringResource(R.string.smart_quotes_detail),
                                     smartQuotes) { typing.smartQuotes = it }

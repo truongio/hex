@@ -107,6 +107,9 @@ internal class TypingPreferences(context: Context) {
     var keyboardTools: Boolean
         get() = prefs.getBoolean(KEYBOARD_TOOLS, false)
         set(value) { prefs.edit().putBoolean(KEYBOARD_TOOLS, value).apply() }
+    var pinnedPaste: Boolean
+        get() = prefs.getBoolean(PINNED_PASTE, false)
+        set(value) { prefs.edit().putBoolean(PINNED_PASTE, value).apply() }
     /** Labs › Keyboard › Smart quotes: typographic ’ ‘ “ ” for the quote keys, suggestions and
      * dictation, off by default. */
     var smartQuotes: Boolean
@@ -165,6 +168,7 @@ internal class TypingPreferences(context: Context) {
         const val LOCAL_CURRENCY = "localCurrency"
         const val EMOJI_SUGGESTIONS = "emojiSuggestions"
         const val KEYBOARD_TOOLS = "keyboardTools"
+        const val PINNED_PASTE = "pinnedPaste"
         const val SMART_QUOTES = "smartQuotes"
         const val SWIPE_DELETE_LETTERS = "swipeDeleteLetters"
         const val PASSWORD_MANAGER_SUGGESTIONS = "passwordManagerSuggestions"

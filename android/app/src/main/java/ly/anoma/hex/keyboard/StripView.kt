@@ -73,6 +73,7 @@ internal class StripView(context: Context, private val ime: HexKeyboard, private
     private val toolPaste = toolButton(R.drawable.ic_paste, R.string.keyboard_tool_paste) { ime.pasteClipboard() }
     private val toolSettings = toolButton(R.drawable.ic_settings, R.string.keyboard_tool_settings) { ime.openKeyboardSettings() }
     private val toolUndo = toolButton(R.drawable.ic_undo, R.string.keyboard_tool_undo) { ime.engine.undoAutocorrection() }
+    private val pinnedPaste = toolButton(R.drawable.ic_paste, R.string.keyboard_tool_paste) { ime.pasteClipboard() }
     private val clipboard = context.getSystemService(ClipboardManager::class.java)
     // Undo dictation, in the slots' place after a dictation (iPhone Hex's chip).
     private val undoChip = TextView(context)
@@ -192,6 +193,8 @@ internal class StripView(context: Context, private val ime: HexKeyboard, private
             setOnClickListener { if (choosing) host.closeMenu() else host.openMenu() }
             setPadding(dp(8), 0, dp(8), 0); isFocusable = true; minimumWidth = dp(40)
         }
+        pinnedPaste.visibility = GONE
+        idleRow.addView(pinnedPaste, LinearLayout.LayoutParams(dp(40), -1))
         idleRow.addView(menuKey, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, -1))
         addView(idleRow, LayoutParams(-1, -1).apply { marginStart = side; marginEnd = side + hexWidth })
 
@@ -356,6 +359,10 @@ internal class StripView(context: Context, private val ime: HexKeyboard, private
             busy = !idle || choosing || show || chips || undo || noted || hint != holdHint, secure = { ime.engine.secure },
             emoji = { ime.engine.emojiAvailable }, canUndo = { ime.engine.canUndoAutocorrection },
             clipboard = { clipboard.hasPrimaryClip() })
+        val pinned = KeyboardTools.pinnedPaste(enabled = ime.feedback.pinnedPaste,
+            busy = !idle || choosing || chips || noted, secure = { ime.engine.secure },
+            clipboard = { clipboard.hasPrimaryClip() })
+        pinnedPaste.visibility = if (pinned) VISIBLE else GONE
         noticeRow.visibility = if (noted) VISIBLE else GONE
         undoBox.visibility = if (undo) VISIBLE else GONE
         // A note that came with text ("Stopped at 1 minute") shares the line with Undo, which then takes only its width,
@@ -366,11 +373,11 @@ internal class StripView(context: Context, private val ime: HexKeyboard, private
         }
         inlineArea.visibility = if (chips) VISIBLE else GONE
         slotRow.visibility = if (show) VISIBLE else GONE
-        toolsRow.visibility = if (tools.isNotEmpty()) VISIBLE else GONE
+        toolsRow.visibility = if (tools.any { it != StripTool.Paste || !pinned }) VISIBLE else GONE
         toolEmoji.visibility = if (StripTool.Emoji in tools) VISIBLE else GONE
-        toolPaste.visibility = if (StripTool.Paste in tools) VISIBLE else GONE
+        toolPaste.visibility = if (StripTool.Paste in tools && !pinned) VISIBLE else GONE
         toolUndo.visibility = if (StripTool.Undo in tools) VISIBLE else GONE
-        statusText.visibility = if (idle && !show && !chips && (!undo || spoken) && !noted && tools.isEmpty()) VISIBLE else GONE
+        statusText.visibility = if (idle && !show && !chips && (!undo || spoken) && !noted && toolsRow.visibility == GONE) VISIBLE else GONE
         menuKey.text = context.getString(when {
             choosing -> R.string.keyboard_menu_done
             show || shared || chips -> R.string.keyboard_menu_more
