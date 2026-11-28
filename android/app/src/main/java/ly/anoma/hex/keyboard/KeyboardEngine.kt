@@ -499,7 +499,8 @@ internal class KeyboardEngine(
         if (!target.connected) return
         edited()
         val w = word
-        if (w == null || symbols || !text.single().isLetter()) { type(text); return }
+        val digit = text.single().isDigit()
+        if (w == null || symbols || !(text.single().isLetter() || digit)) { type(text); return }
         settleUndo()
         undo = null
         if (w.token.isEmpty()) {
@@ -512,7 +513,7 @@ internal class KeyboardEngine(
         val start = if (expectedCaret >= 0) expectedCaret else minOf(selStart, selEnd)
         expectedCaret = if (start >= 0) start + text.length else -1
         if (target.commit(text)) {
-            if (explicit) w.explicit(text) else w.letter(text, x, y, grid)
+            if (digit) w.digit(text, x, y, grid) else if (explicit) w.explicit(text) else w.letter(text, x, y, grid)
             showSuggestions(w)
         } else resetTyping()
         inputDone()

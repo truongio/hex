@@ -217,7 +217,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
      * frequency (after two letters the word is usually unfinished: completions first). Never what was
      * typed again. [autocorrect] off: no fix and no readings, completions only. */
     fun strip(autocorrect: Boolean = true): List<Suggestion> {
-        if (token.length !in 1..MAX_LENGTH) return emptyList()
+        if (token.length !in 1..MAX_LENGTH || token.none(Char::isLetter)) return emptyList()
         val typed = Suggestion(token, Suggestion.Kind.Typed)
         // Your shortcut: what you typed and its phrase, which space puts in whatever autocorrect does.
         decoder.personal?.shortcut(lookup(token))?.let { return listOf(typed, Suggestion(it, Suggestion.Kind.Fix)) }
@@ -294,6 +294,16 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
             points.add(KeyPoint(x, y)); pointGrid = grid
         }
     }
+    fun digit(text: String, x: Double, y: Double, grid: KeyGrid) {
+        token += text; decision = null
+        if (spatial && !literalOnly && taps.size < MAX_LENGTH) {
+            taps.add(asDigit(decoder.score(grid, x, y)))
+            other?.let { otherTaps.add(asDigit(it.score(grid, x, y))) }
+            points.add(KeyPoint(x, y)); pointGrid = grid
+        }
+    }
+    private fun asDigit(tap: SpatialDecoder.Tap) = SpatialDecoder.Tap(tap.cost.copyOf().also { it[0] = 0.0 }, tap.choices,
+        tap.belowLetters, tap.missedSpaceCost, tap.spaceCost)
     fun explicit(text: String) {
         token += text; taps.clear(); otherTaps.clear(); points.clear(); decision = null; literalOnly = true
     }
@@ -405,7 +415,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         personal?.shortcut(lookup(token))?.let { return it }
         // Your own word: never corrected into another, and spelled your way ("github" -> "GitHub").
         personal?.index(lookup(token))?.takeIf { it >= 0 }?.let { return yours(personal.text(it)).takeIf { s -> s != token } }
-        if (literalOnly || blocked(token)) return null
+        if (literalOnly || blocked(token) || token.any(Char::isDigit)) return null
         val lower = lookup(token.lowercase())
         val allCaps = token.length >= 2 && token.all { it.isUpperCase() }
         if (token.drop(1).any { it.isUpperCase() } && !allCaps) return null

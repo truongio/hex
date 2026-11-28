@@ -195,7 +195,7 @@ internal class SpatialDecoder(val model: TypingModel) {
 
     fun scored(typed: String, taps: List<Tap>, previous: Int, swears: Boolean): Scored? {
         if (typed.length !in 2..32 || taps.size != typed.length || model.neverSuggest.blocks(typed, swears, previous) ||
-            typed.any { model.code(it) == 0 || it == '\'' }) return null
+            typed.any { (model.code(it) == 0 && !it.isDigit()) || it == '\'' }) return null
         val literal = model.index(typed)
         val personal = personal?.takeIf { it.size > 0 }
         val yours = personal?.index(typed) ?: -1

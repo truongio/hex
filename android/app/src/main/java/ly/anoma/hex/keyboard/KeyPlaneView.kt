@@ -410,7 +410,12 @@ internal class KeyPlaneView(context: Context, private val ime: HexKeyboard, priv
         val width = columns / digits.length
         for ((position, c) in digits.withIndex()) {
             val text = c.toString()
-            val k = caps.cap(text, text) { ime.engine.type(text) }
+            val k = caps.cap(text, text) {
+                val g = geometry()
+                val under = current?.let { KeyboardLetters.rows(it.language.layoutCode)[0].getOrNull(position) }
+                val p = under?.let { g?.centres?.get(it) }
+                if (g != null && p != null) ime.engine.letter(text, p.x, p.y, g) else ime.engine.type(text)
+            }
             row.add(k, position * width, width)
             fun holds() = LetterFeedback.symbolHolds(c)
             if (holds().isNotEmpty()) {
