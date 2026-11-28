@@ -502,7 +502,7 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
             val now = fix ?: token
             // A word typed or corrected with an apostrophe is left as it is, whether that apostrophe
             // is straight or the smart ’ (Labs › Keyboard › Smart quotes).
-            val revised = if (word != null && '\'' !in lookup(word.typed)) revision(word.text, now) else null
+            val revised = if (word != null && '\'' !in lookup(word.typed)) revision(word.text, now) ?: reread(word, now) else null
             if (fix != null || revised != null)
                 result = Correction((if (revised != null) word!!.text + " " else "") + token, (revised?.let { "$it " } ?: "") + now)
         }
@@ -543,6 +543,20 @@ internal class TypingWord @JvmOverloads constructor(val decoder: SpatialDecoder,
         val choice = ContextWords.choice(m, key, prev, next.substringBefore(' ').lowercase(), startsSentence(rest)) ?: return null
         if (m.neverSuggest.blocks(choice.lowercase(), suggestSwearWords, m.context(prev.orEmpty()))) return null
         return if (addsCapitals || text.first().isUpperCase()) choice else choice.lowercase().takeIf { it != key }
+    }
+
+    // The word before, a letter of it read as a neighbouring key's now that `next` follows it
+    // ("dem hör färgerna" -> "dem här färgerna"), or null: tapped words only, never your own.
+    private fun reread(word: Finished, next: String): String? {
+        val taps = word.taps ?: return null
+        val text = word.text
+        if (!spatial || literalOnly || text != word.typed || taps.size != text.length || text.drop(1).any { it.isUpperCase() }) return null
+        val lower = text.lowercase()
+        if ((model.language == "en" && lower in shorthand) || decoder.personal?.owns(text) == true) return null
+        val prev = previousWord(before.dropLast(text.length + 1)).takeIf { it.isNotEmpty() }
+        val after = lookup(next.substringBefore(' ')).lowercase().takeIf { s -> s.isNotEmpty() && s.all { it.isLetter() } } ?: return null
+        val choice = decoder.inContext(lower, taps, model.context(prev.orEmpty()), after, suggestSwearWords) ?: return null
+        return matchCase(text, choice)
     }
 
     fun known(spelling: String) = knows(spelling)

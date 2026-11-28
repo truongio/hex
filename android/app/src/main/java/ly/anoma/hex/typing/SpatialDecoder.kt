@@ -36,7 +36,7 @@ internal class SpatialDecoder(val model: TypingModel) {
     /** `spaceCost`: what reading this tap as a space the finger missed costs when it landed on
      * the bottom row's upper half, or infinity (`spaceTapCost`). */
     class Tap(val cost: DoubleArray, val choices: IntArray, val belowLetters: Boolean, val missedSpaceCost: Double,
-              val spaceCost: Double = Double.POSITIVE_INFINITY)
+              val spaceCost: Double = Double.POSITIVE_INFINITY, val keyCost: DoubleArray = cost)
     data class Reading(val text: String, val cost: Double, val frequency: Int)
     data class Decision(val replace: String?, val readings: List<Reading>)
     // Google Books English has richer word pairs; these are the shared iOS R1 weights.
@@ -62,9 +62,9 @@ internal class SpatialDecoder(val model: TypingModel) {
             val base = model.bases[i]
             if (base != i && raw[base].isFinite()) costs[i] = minOf(raw[i], raw[base] + ACCENT_COST)
         }
-        for (i in 1 until costs.size) costs[i] -= min
+        for (i in 1 until costs.size) { costs[i] -= min; raw[i] -= min }
         val choices = (1 until costs.size).filter { costs[it] <= MAX_TAP_COST }.sortedBy { costs[it] }.toIntArray()
-        return Tap(costs, choices, y > grid.bottomY, grid.missedSpaceCost, spaceCost(grid, x, y))
+        return Tap(costs, choices, y > grid.bottomY, grid.missedSpaceCost, spaceCost(grid, x, y), raw)
     }
 
     // A tap on the bottom letter row's upper half, above the space bar, read as a space the
@@ -88,6 +88,37 @@ internal class SpatialDecoder(val model: TypingModel) {
         val toBar = (y - bar.centreY) / grid.verticalSpread
         val toRow = (y - grid.bottomY) / grid.verticalSpread
         return maxOf(0.0, .5 * (toRow * toRow - toBar * toBar))
+    }
+
+    /** `typed`, a word of the model, read again now that `next` follows it: another word of the model
+     * one letter apart, that letter's key near enough its tap, which the words on both sides make
+     * clearly likelier ("dem hör färgerna" -> "dem här färgerna"). Only the keys' own places count, so
+     * "har" never becomes "här" for want of a dot. Null keeps it. Lowercase spellings. */
+    fun inContext(typed: String, taps: List<Tap>, previous: Int, next: String, swears: Boolean): String? {
+        val own = model.index(typed); val after = model.index(next)
+        if (own < 0 || after < 0 || taps.size != typed.length || typed.length < 2) return null
+        fun cost(word: Int, spelling: String): Double {
+            var c = lmWeight * (lm(previous, word) + lm(word, after))
+            for (i in taps.indices) c += taps[i].keyCost[model.code(spelling[i])]
+            return c
+        }
+        var best: String? = null
+        var bestCost = cost(own, typed) - CONTEXT_MARGIN
+        val letters = typed.toCharArray()
+        for (i in typed.indices) {
+            val at = model.code(typed[i])
+            for (c in 1..model.alphabet) {
+                if (c == at || c == model.apostrophe || taps[i].keyCost[c] > CONTEXT_REACH) continue
+                letters[i] = model.character(c)
+                val spelling = String(letters)
+                val w = model.index(spelling)
+                if (w < 0 || model.neverSuggest.blocks(w, swears, previous)) continue
+                val k = cost(w, spelling)
+                if (k < bestCost) { best = spelling; bestCost = k }
+            }
+            letters[i] = typed[i]
+        }
+        return best
     }
 
     /** One word in place of two, where the space between them was tapped for a letter on the row
@@ -411,6 +442,9 @@ internal class SpatialDecoder(val model: TypingModel) {
         private const val SUBSTITUTE_COST = 9.0
         private const val SUBSTITUTE_LENGTH = 7
         private const val MAX_TAP_COST = 9.0
+        // A word the next one rereads must win by this many nats, its letter's key within this reach of the tap.
+        private const val CONTEXT_MARGIN = 3.0
+        private const val CONTEXT_REACH = 9.0
         // An accented letter typed as its base letter's key (é from e).
         private const val ACCENT_COST = 1.0
         private const val SPACE_TAP_WEIGHT = .25
